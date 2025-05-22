@@ -16,6 +16,23 @@ import { ListTemplatesUseCase } from "./application/usecases/listTemplatesUseCas
 import { UpdateTemplateUseCase } from "./application/usecases/updateTemplateUseCase";
 import { DeleteTemplateUseCase } from "./application/usecases/deleteTemplateUseCase";
 
+import type { DestinationRepository } from "./domain/repositories/destinationRepository"; // DestinationRepositoryインターフェース
+import { CreateDestinationUseCase } from "./application/usecases/createDestinationUseCase"; // Destination用ユースケース
+import { FirestoreDestinationRepository } from "./infrastructure/persistence/firestore/firestoreDestinationRepository"; // Firestore実装
+import {
+	createDestinationHandlerFactory,
+	deleteDestinationHandlerFactory,
+	updateDestinationHandlerFactory,
+} from "./presentation/handlers/destinationHandler"; // Destination用ハンドラ
+
+import { GetDestinationUseCase } from "./application/usecases/getDestinationUseCase"; // Destination用GETユースケース
+import { getDestinationByIdHandlerFactory } from "./presentation/handlers/destinationHandler"; // Destination用GETハンドラ
+
+import { ListDestinationsUseCase } from "./application/usecases/listDestinationsUseCase"; // Destination用Listユースケース
+import { listDestinationsHandlerFactory } from "./presentation/handlers/destinationHandler"; // Destination用Listハンドラ
+import { UpdateDestinationUseCase } from "./application/usecases/updateDestinationUseCase";
+import { DeleteDestinationUseCase } from "./application/usecases/deleteDestinationUseCase";
+
 const app = new Hono();
 
 // --- DIのセットアップ ---
@@ -33,11 +50,40 @@ if (USE_FIRESTORE_DB) {
 	repositoryTypeMessage = "Using InMemoryTemplateRepository (for development)";
 }
 
+let destinationRepository: DestinationRepository;
+
+if (USE_FIRESTORE_DB) {
+	// templateRepository = new FirestoreTemplateRepository(); // (これは設定済み)
+	destinationRepository = new FirestoreDestinationRepository();
+	// repositoryTypeMessage = "Using FirestoreTemplateRepository (for development)"; // メッセージは工夫が必要になるな
+	// 例えば、どのリポジトリが何を使ってるか、もっと詳しく出すとか
+} else {
+	// templateRepository = new InMemoryTemplateRepository(); // (これは設定済み)
+	// destinationRepository = new InMemoryDestinationRepository(); // インメモリも用意するなら
+	// repositoryTypeMessage = "Using InMemoryTemplateRepository (for development)";
+	throw new Error(
+		"InMemoryDestinationRepository not implemented for this example yet if needed",
+	);
+}
+
 const createTemplateUseCase = new CreateTemplateUseCase(templateRepository);
 const getTemplateUseCase = new GetTemplateUseCase(templateRepository);
 const listTemplatesUseCase = new ListTemplatesUseCase(templateRepository);
 const updateTemplateUseCase = new UpdateTemplateUseCase(templateRepository);
 const deleteTemplateUseCase = new DeleteTemplateUseCase(templateRepository);
+const createDestinationUseCase = new CreateDestinationUseCase(
+	destinationRepository,
+); // Destination用ユースケースもインスタンス化
+const getDestinationUseCase = new GetDestinationUseCase(destinationRepository); // Destination用GETユースケースもインスタンス化
+const listDestinationsUseCase = new ListDestinationsUseCase(
+	destinationRepository,
+);
+const updateDestinationUseCase = new UpdateDestinationUseCase(
+	destinationRepository,
+);
+const deleteDestinationUseCase = new DeleteDestinationUseCase(
+	destinationRepository,
+);
 
 // --- ルーティング定義 ---
 const apiRoutes = new Hono();
@@ -58,6 +104,26 @@ app.put(
 app.delete(
 	"/api/v1/templates/:id",
 	deleteTemplateHandlerFactory(deleteTemplateUseCase),
+);
+app.post(
+	"/api/v1/destinations",
+	createDestinationHandlerFactory(createDestinationUseCase),
+);
+app.get(
+	"/api/v1/destinations/:id",
+	getDestinationByIdHandlerFactory(getDestinationUseCase),
+);
+app.get(
+	"/api/v1/destinations",
+	listDestinationsHandlerFactory(listDestinationsUseCase),
+);
+app.put(
+	"/api/v1/destinations/:id",
+	updateDestinationHandlerFactory(updateDestinationUseCase),
+);
+app.delete(
+	"/api/v1/destinations/:id",
+	deleteDestinationHandlerFactory(deleteDestinationUseCase),
 );
 
 app.route("/api/v1", apiRoutes);
