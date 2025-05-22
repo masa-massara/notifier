@@ -1,0 +1,16 @@
+{
+  "name": "app",
+  "scripts": {
+    "dev": "bun run --hot src/main.ts",
+    "lint": "bun biome lint ./src",
+    "format": "bun biome format --write ./src",
+    "check": "bun biome check --apply ./src"
+  },
+  "dependencies": {
+    "hono": "^4.7.10"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/bun": "latest"
+  }
+}
