@@ -1,80 +1,113 @@
 // src/main.ts
 import { Hono } from "hono";
+
+// --- Domain層のインポート ---
+import type { TemplateRepository } from "./domain/repositories/templateRepository";
+import type { DestinationRepository } from "./domain/repositories/destinationRepository";
+import type { NotionApiService } from "./domain/services/notionApiService";
+import type { CacheService } from "./application/services/cacheService"; // CacheServiceインターフェースも定義したと仮定
+
+// --- Application層 (UseCases) のインポート ---
 import { CreateTemplateUseCase } from "./application/usecases/createTemplateUseCase";
-import { InMemoryTemplateRepository } from "./infrastructure/persistence/inMemory/inMemoryTemplateRepository";
-import { FirestoreTemplateRepository } from "./infrastructure/persistence/firestore/firestoreTemplateRepository";
-import {
-	createTemplateHandlerFactory,
-	deleteTemplateHandlerFactory,
-	listTemplatesHandlerFactory,
-	updateTemplateHandlerFactory,
-} from "./presentation/handlers/templateHandler";
-import type { TemplateRepository } from "./domain/repositories/templateRepository"; // TemplateRepository は型としてインポート
-import { GetTemplateUseCase } from "./application/usecases/getTemplateUseCase"; // 新しいユースケース
-import { getTemplateByIdHandlerFactory } from "./presentation/handlers/templateHandler"; // 新しいハンドラファクトリ
+import { GetTemplateUseCase } from "./application/usecases/getTemplateUseCase";
 import { ListTemplatesUseCase } from "./application/usecases/listTemplatesUseCase";
 import { UpdateTemplateUseCase } from "./application/usecases/updateTemplateUseCase";
 import { DeleteTemplateUseCase } from "./application/usecases/deleteTemplateUseCase";
 
-import type { DestinationRepository } from "./domain/repositories/destinationRepository"; // DestinationRepositoryインターフェース
-import { CreateDestinationUseCase } from "./application/usecases/createDestinationUseCase"; // Destination用ユースケース
-import { FirestoreDestinationRepository } from "./infrastructure/persistence/firestore/firestoreDestinationRepository"; // Firestore実装
-import {
-	createDestinationHandlerFactory,
-	deleteDestinationHandlerFactory,
-	updateDestinationHandlerFactory,
-} from "./presentation/handlers/destinationHandler"; // Destination用ハンドラ
-
-import { GetDestinationUseCase } from "./application/usecases/getDestinationUseCase"; // Destination用GETユースケース
-import { getDestinationByIdHandlerFactory } from "./presentation/handlers/destinationHandler"; // Destination用GETハンドラ
-
-import { ListDestinationsUseCase } from "./application/usecases/listDestinationsUseCase"; // Destination用Listユースケース
-import { listDestinationsHandlerFactory } from "./presentation/handlers/destinationHandler"; // Destination用Listハンドラ
+import { CreateDestinationUseCase } from "./application/usecases/createDestinationUseCase";
+import { GetDestinationUseCase } from "./application/usecases/getDestinationUseCase";
+import { ListDestinationsUseCase } from "./application/usecases/listDestinationsUseCase";
 import { UpdateDestinationUseCase } from "./application/usecases/updateDestinationUseCase";
 import { DeleteDestinationUseCase } from "./application/usecases/deleteDestinationUseCase";
+
+import { ProcessNotionWebhookUseCase } from "./application/usecases/processNotionWebhookUseCase";
+
+// --- Infrastructure層 (具体的な実装) のインポート ---
+import { InMemoryTemplateRepository } from "./infrastructure/persistence/inMemory/inMemoryTemplateRepository";
+import { FirestoreTemplateRepository } from "./infrastructure/persistence/firestore/firestoreTemplateRepository";
+// import { InMemoryDestinationRepository } from "./infrastructure/persistence/inMemory/inMemoryDestinationRepository"; // もし作るなら
+import { FirestoreDestinationRepository } from "./infrastructure/persistence/firestore/firestoreDestinationRepository";
+import { NotionApiClient } from "./infrastructure/web-clients/notionApiClient";
+import { InMemoryCacheService } from "./infrastructure/cache/inMemoryCacheService"; // InMemoryCacheService をインポート (別ファイルにある想定)
+
+// --- Presentation層 (Handlers) のインポート ---
+import {
+	createTemplateHandlerFactory,
+	getTemplateByIdHandlerFactory,
+	listTemplatesHandlerFactory,
+	updateTemplateHandlerFactory,
+	deleteTemplateHandlerFactory,
+} from "./presentation/handlers/templateHandler";
+import {
+	createDestinationHandlerFactory,
+	getDestinationByIdHandlerFactory,
+	listDestinationsHandlerFactory,
+	updateDestinationHandlerFactory,
+	deleteDestinationHandlerFactory,
+} from "./presentation/handlers/destinationHandler";
+import { notionWebhookHandlerFactory } from "./presentation/handlers/notionWebhookHandler";
 
 const app = new Hono();
 
 // --- DIのセットアップ ---
-const USE_FIRESTORE_DB = true; // このフラグで実際に使うリポジトリを切り替える
-// (将来的には環境変数とかで制御するのがええで)
+const USE_FIRESTORE_DB = true; // Firestoreを使うかどうかのフラグ (環境変数で制御するのが望ましい)
 
+// Environment Variables
+const notionIntegrationToken = process.env.NOTION_INTEGRATION_TOKEN;
+const googleAppCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS; // docker-compose.ymlで設定
+
+if (!notionIntegrationToken) {
+	const errorMessage =
+		"FATAL ERROR: NOTION_INTEGRATION_TOKEN environment variable is not set.";
+	console.error(errorMessage);
+	throw new Error(errorMessage);
+}
+if (USE_FIRESTORE_DB && !googleAppCredentials) {
+	// Firestoreを使う場合は、サービスアカウントキーのパスも必須
+	const errorMessage =
+		"FATAL ERROR: GOOGLE_APPLICATION_CREDENTIALS environment variable is not set, but USE_FIRESTORE_DB is true.";
+	console.error(errorMessage);
+	throw new Error(errorMessage);
+}
+
+// Repositories and Services
 let templateRepository: TemplateRepository;
-let repositoryTypeMessage: string; // ログ用のメッセージを保持する変数
+let destinationRepository: DestinationRepository;
+const cacheService: CacheService = new InMemoryCacheService(); // まずはインメモリキャッシュを使用
+const notionApiService: NotionApiService = new NotionApiClient(
+	notionIntegrationToken,
+	cacheService,
+); // CacheServiceを注入
+
+let persistenceTypeMessage: string;
 
 if (USE_FIRESTORE_DB) {
 	templateRepository = new FirestoreTemplateRepository();
-	repositoryTypeMessage = "Using FirestoreTemplateRepository (for development)";
+	destinationRepository = new FirestoreDestinationRepository();
+	persistenceTypeMessage = "Persistence: Firestore";
 } else {
 	templateRepository = new InMemoryTemplateRepository();
-	repositoryTypeMessage = "Using InMemoryTemplateRepository (for development)";
-}
-
-let destinationRepository: DestinationRepository;
-
-if (USE_FIRESTORE_DB) {
-	// templateRepository = new FirestoreTemplateRepository(); // (これは設定済み)
-	destinationRepository = new FirestoreDestinationRepository();
-	// repositoryTypeMessage = "Using FirestoreTemplateRepository (for development)"; // メッセージは工夫が必要になるな
-	// 例えば、どのリポジトリが何を使ってるか、もっと詳しく出すとか
-} else {
-	// templateRepository = new InMemoryTemplateRepository(); // (これは設定済み)
-	// destinationRepository = new InMemoryDestinationRepository(); // インメモリも用意するなら
-	// repositoryTypeMessage = "Using InMemoryTemplateRepository (for development)";
+	// destinationRepository = new InMemoryDestinationRepository(); // 必要ならこちらも実装
+	// 今回はFirestore固定に近い形で進めているので、else側はエラーにするか、
+	// InMemoryDestinationRepositoryもちゃんと実装する必要がある。
+	// ここでは、Templateだけインメモリで、Destinationは未実装と仮定してエラーを投げる。
 	throw new Error(
-		"InMemoryDestinationRepository not implemented for this example yet if needed",
+		"InMemoryDestinationRepository is not implemented for this fallback scenario.",
 	);
+	// persistenceTypeMessage = "Persistence: InMemory";
 }
 
+// UseCaseのインスタンス化
 const createTemplateUseCase = new CreateTemplateUseCase(templateRepository);
 const getTemplateUseCase = new GetTemplateUseCase(templateRepository);
 const listTemplatesUseCase = new ListTemplatesUseCase(templateRepository);
 const updateTemplateUseCase = new UpdateTemplateUseCase(templateRepository);
 const deleteTemplateUseCase = new DeleteTemplateUseCase(templateRepository);
+
 const createDestinationUseCase = new CreateDestinationUseCase(
 	destinationRepository,
-); // Destination用ユースケースもインスタンス化
-const getDestinationUseCase = new GetDestinationUseCase(destinationRepository); // Destination用GETユースケースもインスタンス化
+);
+const getDestinationUseCase = new GetDestinationUseCase(destinationRepository);
 const listDestinationsUseCase = new ListDestinationsUseCase(
 	destinationRepository,
 );
@@ -85,48 +118,60 @@ const deleteDestinationUseCase = new DeleteDestinationUseCase(
 	destinationRepository,
 );
 
-// --- ルーティング定義 ---
-const apiRoutes = new Hono();
-app.post(
-	"/api/v1/templates",
-	createTemplateHandlerFactory(createTemplateUseCase),
+const processNotionWebhookUseCase = new ProcessNotionWebhookUseCase(
+	templateRepository,
+	destinationRepository,
+	notionApiService,
 );
-app.get(
-	"/api/v1/templates/:id",
-	getTemplateByIdHandlerFactory(getTemplateUseCase),
-);
-app.get("/api/v1/templates", listTemplatesHandlerFactory(listTemplatesUseCase));
 
-app.put(
-	"/api/v1/templates/:id",
+// --- ルーティング定義 ---
+const apiV1 = new Hono(); // /api/v1 のベースパス用の新しいHonoインスタンス
+
+// Template API routes
+apiV1.post("/templates", createTemplateHandlerFactory(createTemplateUseCase));
+apiV1.get("/templates/:id", getTemplateByIdHandlerFactory(getTemplateUseCase));
+apiV1.get("/templates", listTemplatesHandlerFactory(listTemplatesUseCase));
+apiV1.put(
+	"/templates/:id",
 	updateTemplateHandlerFactory(updateTemplateUseCase),
 );
-app.delete(
-	"/api/v1/templates/:id",
+apiV1.delete(
+	"/templates/:id",
 	deleteTemplateHandlerFactory(deleteTemplateUseCase),
 );
-app.post(
-	"/api/v1/destinations",
+
+// Destination API routes
+apiV1.post(
+	"/destinations",
 	createDestinationHandlerFactory(createDestinationUseCase),
 );
-app.get(
-	"/api/v1/destinations/:id",
+apiV1.get(
+	"/destinations/:id",
 	getDestinationByIdHandlerFactory(getDestinationUseCase),
 );
-app.get(
-	"/api/v1/destinations",
+apiV1.get(
+	"/destinations",
 	listDestinationsHandlerFactory(listDestinationsUseCase),
 );
-app.put(
-	"/api/v1/destinations/:id",
+apiV1.put(
+	"/destinations/:id",
 	updateDestinationHandlerFactory(updateDestinationUseCase),
 );
-app.delete(
-	"/api/v1/destinations/:id",
+apiV1.delete(
+	"/destinations/:id",
 	deleteDestinationHandlerFactory(deleteDestinationUseCase),
 );
 
-app.route("/api/v1", apiRoutes);
+// メインのappに /api/v1 ルートを結合
+app.route("/api/v1", apiV1);
+
+// Notion Webhook route (これは /api/v1 の外に置くことが多い)
+app.post(
+	"/webhooks/notion",
+	notionWebhookHandlerFactory(processNotionWebhookUseCase),
+);
+
+// Root path
 app.get("/", (c) => {
 	return c.text("Notifier App is running!");
 });
@@ -138,5 +183,5 @@ export default {
 
 console.log("Notifier app is running on port 3000");
 if (process.env.NODE_ENV !== "production") {
-	console.log(repositoryTypeMessage); // ← ここで保存しておいたメッセージを表示
+	console.log(persistenceTypeMessage);
 }
