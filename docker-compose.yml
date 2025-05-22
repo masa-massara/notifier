@@ -1,4 +1,4 @@
-# docker-compose.yml
+# プロジェクトルートの docker-compose.yml
 version: '3.8'
 
 services:
@@ -9,10 +9,20 @@ services:
     container_name: notifier-app
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     volumes:
       - .:/usr/src/app
       - /usr/src/app/node_modules
-    # ↓↓↓ この行を変更したで！ ↓↓↓
+      # ↓↓↓ サービスアカウントキーのJSONファイルをマウントする設定を追加 ↓↓↓
+      - ./.gcloud/service-account-key.json:/usr/src/app/service-account-key.json:ro
+    environment:
+      # ↓↓↓ 環境変数でJSONファイルのパスをコンテナ内で指定する設定を追加 ↓↓↓
+      - GOOGLE_APPLICATION_CREDENTIALS=/usr/src/app/service-account-key.json
+      # ↓↓↓ 開発モードか本番モードかの判別用に (これはアプリロジックで使うなら) ↓↓↓
+      - NODE_ENV=development
+    # command は "sh -c "bun install && bun run dev"" のままか、
+    # .devcontainer/docker-compose.yml で sleep infinity に上書きされる
     command: sh -c "bun install && bun run dev"
     tty: true
     stdin_open: true

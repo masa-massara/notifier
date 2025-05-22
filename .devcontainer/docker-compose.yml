@@ -1,0 +1,7 @@
+# ファイル名: .devcontainer/docker-compose.yml
+version: '3.8'
+services:
+  app:
+    # commandを上書きして、コンテナが起動しっぱなしになるようにする
+    command: sleep infinity
+    # volumes の上書きはここではしない (メインのdocker-compose.ymlの設定をそのまま使う)

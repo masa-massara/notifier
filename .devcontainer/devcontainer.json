@@ -1,0 +1,49 @@
+// .devcontainer/devcontainer.json
+{
+	"name": "Notifier Dev Container", // プロジェクト名とか分かりやすい名前に変えといたで
+
+	// ↓↓↓ dockerComposeFileは、プロジェクトルートのやつだけを指定する形にしてみよか ↓↓↓
+	"dockerComposeFile": [
+		"../docker-compose.yml", // メインのやつ
+		"docker-compose.yml" // .devcontainer フォルダの中の上書き用やつ
+	],
+
+	"service": "app", // これは 'app' サービスのままでOKやな
+
+	// ↓↓↓ workspaceFolder を docker-compose.yml の volumes に合わせて変更 ↓↓↓
+	"workspaceFolder": "/usr/src/app",
+
+	"features": {
+		// Gitをインストールするfeatureを追加
+		"ghcr.io/devcontainers/features/git:1": {}
+		// もし他にも必要なツールがあったら、ここに追加できるで
+		// 例: "ghcr.io/devcontainers/features/docker-in-docker:2": {} // コンテナ内でDockerコマンドを使いたい場合
+		// 例: "ghcr.io/devcontainers/features/node:1": {} // Node.jsも明示的に入れたい場合 (Bunと併用するならバージョン注意)
+	},
+
+	// VSCode内で使う拡張機能を指定する
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"bunsenapp.bun-vscode", // BunのVSCode拡張機能（もし使ってたら）
+				"biomejs.biome", // Biomeの拡張機能
+				"eamodio.gitlens", // GitLens (めっちゃ便利！)
+				"ms-vscode.makefile-tools" // もしMakefile使うなら (今回は不要かな)
+				// 他にもコンテナ内で使いたい拡張機能があったらIDを追加してな
+			]
+		}
+	},
+
+	// ↓↓↓ コンテナのポートをローカルに転送する設定を追加 ↓↓↓
+	"forwardPorts": [3000],
+
+	// ↓↓↓ コンテナが作成された後に実行するコマンドを追加 ↓↓↓
+	// これで、コンテナ起動時に自動で依存関係をインストールしてくれる
+	"postCreateCommand": "bun install"
+
+	// 下のコメントアウトされてるやつは、必要になったら設定する感じでええと思うわ
+	// "features": {},
+	// "runServices": [],
+	// "shutdownAction": "none",
+	// "remoteUser": "devcontainer"
+}
