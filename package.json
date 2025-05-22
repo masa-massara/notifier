@@ -7,7 +7,10 @@
     "check": "bun biome check --apply ./src"
   },
   "dependencies": {
-    "hono": "^4.7.10"
+    "@types/uuid": "^10.0.0",
+    "firebase-admin": "^13.4.0",
+    "hono": "^4.7.10",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
