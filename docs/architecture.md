@@ -16,7 +16,7 @@ graph TD
     subgraph "ドメインの核"
         C
     end
-    subgraph "アプリケーション固有のビジネスルール"
+    subgraph "固有のビジネスルール"
         B
     end
     subgraph "外部とのインターフェース"
