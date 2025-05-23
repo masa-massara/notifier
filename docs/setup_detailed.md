@@ -44,7 +44,28 @@ Notifier アプリは、動作するためにいくつかの外部サービス�
     -   「始める」ボタンをクリックします。
     -   「ログイン方法」タブで、「メール/パスワード」プロバイダを選択し、「有効にする」トグルをオンにして保存します。
 
-### 3.4. Firebase CLI のセットアップ (Dev Container 内)
+### 3.4. User-Specific Notion Integrations (ユーザー固有のNotionインテグレーション)
+
+このアプリケーションでは、ユーザーが自身のNotion Internal Integration Tokenを登録し、それを利用してNotionデータベースへのアクセスを行います。これにより、各ユーザーは自身の権限範囲内でアプリケーションを利用できます。
+
+**Notion Internal Integrationの作成方法:**
+
+1.  Notionの `My integrations` ページ (https://www.notion.so/my-integrations) にアクセスします。
+2.  `+ New integration` ボタンをクリックします。
+3.  インテグレーションに名前を付け（例: "My Notifier App Integration"）、関連付けるワークスペースを選択します。
+4.  Capabilitiesとして "Internal Integration" を選択します（これにより、APIキーが発行されます）。
+5.  **重要**: 作成したインテグレーションを、Notifierアプリで使用したい特定のデータベースと共有する必要があります。これはNotionのUIから行います。データベースの右上にある「共有」(Share)メニューを開き、「招待」(Invite)タブで作成したインテグレーションを選択して追加します。少なくとも「読み取り権限」(Can view) が必要です。テンプレート作成時のスキーマ検証やWebhook処理時のデータ取得のため、「コンテンツの読み取り」(Read content)権限も確認してください。
+6.  インテグレーションを作成すると、「Internal Integration Token」が提供されます（例: `secret_xxxxxxxxxxxxxxxxxxxx`）。このトークンをコピーします。これがNotifierアプリに登録するトークンです。
+
+**Notifierアプリへのトークン登録:**
+
+ユーザーは、Notifierアプリが提供する新しいAPIエンドポイント（詳細は `docs/api_reference.md` の `/api/v1/me/notion-integrations` セクションを参照）を使用して、上記で取得したInternal Integration Tokenを登録・管理します。
+
+**テンプレート作成時の利用:**
+
+テンプレートを作成する際には、リクエストボディに、登録済みの `UserNotionIntegration` のIDを `userNotionIntegrationId` として指定する必要があります。これにより、そのテンプレートに関連するNotion APIコールが、指定されたユーザーのトークンを使用して行われます。
+
+### 3.5. Firebase CLI のセットアップ (Dev Container 内)
 
 Firebase Emulator Suite を利用するために、Dev Container 内に Firebase CLI をインストールし、ログインします。
 
@@ -69,6 +90,7 @@ Firebase Emulator Suite を利用するために、Dev Container 内に Firebase
 # .env ファイルの例
 
 NOTION_INTEGRATION_TOKEN="secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+NOTION_TOKEN_ENCRYPTION_KEY="your_32_byte_hex_secret_key_here"
 
 # GOOGLE_APPLICATION_CREDENTIALS は docker-compose.yml で直接設定するため、ここには不要です。
 # FIREBASE_AUTH_EMULATOR_HOST や FIRESTORE_EMULATOR_HOST も、
@@ -77,14 +99,15 @@ NOTION_INTEGRATION_TOKEN="secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 # PORT=3000 # 必要に応じてアプリケーションのポート番号を指定 (デフォルトは 3000)
 ```
 
--   `NOTION_INTEGRATION_TOKEN`: 手順 3.1 で取得した Notion の内部インテグレーションシークレットをここに貼り付けてください。
+-   `NOTION_INTEGRATION_TOKEN`: 以前は全てのNotion APIインタラクションのグローバルトークンとして使用されていました。ユーザー固有のインテグレーション導入に伴い、このトークンはユーザーがトリガーするアクションでは段階的に廃止されるか、もしあればシステムレベル/管理者機能のために保持される可能性があります。ユーザー固有のデータアクセスには、システムはユーザーが提供したトークンに依存します。
+-   `NOTION_TOKEN_ENCRYPTION_KEY`: ユーザーのNotionインテグレーションアクセストークンを暗号化および復号化するために使用される32バイト（256ビット）の秘密鍵です。このキーは極秘に保管する必要があります。適切なキーは `openssl rand -hex 32` のようなコマンドで生成できます。
 -   **注意**: `.env` ファイルは `.gitignore` に追加し、Git リポジトリにコミットしないでください。
 
-## 4. アプリケーションの起動 と Firebase Emulator Suite の利用 (開発環境)
+## 5. アプリケーションの起動 と Firebase Emulator Suite の利用 (開発環境)
 
 上記の設定が完了したら、アプリケーションと Firebase Emulator Suite を起動できます。
 
-### 4.1. Firebase Emulator Suite のセットアップと起動 (Dev Container 内)
+### 5.1. Firebase Emulator Suite のセットアップと起動 (Dev Container 内)
 
 開発時には、Firebase Authentication や Firestore の動作をローカルでエミュレートするために Firebase Emulator Suite を使用します。
 
@@ -143,18 +166,18 @@ NOTION_INTEGRATION_TOKEN="secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
         ```
     - HTML/JSクライアントの場合、Dev Container内でHTTPサーバーを立てて（例: `emulator_test_client` フォルダで `npx serve -p 7000`）、フォワードされたポート（例: `http://localhost:7000`）にホストのブラウザからアクセスしてIDトークンを取得します。
 
-### 4.2. アプリケーションの起動 (VSCode Dev Containers を使用)
+### 5.2. アプリケーションの起動 (VSCode Dev Containers を使用)
 
 1.  VSCode で `notifier` プロジェクトを開き、Dev Container に接続します。
     -   （`forwardPorts` の変更などでコンテナをリビルドした場合は、その完了を待ちます。）
-2.  **Firebase Emulator Suite が起動していることを確認します (上記 4.1 の手順)。**
+2.  **Firebase Emulator Suite が起動していることを確認します (上記 5.1 の手順)。**
 3.  VSCode 内のターミナルで、以下のコマンドを実行して開発サーバーを起動します。
     ```bash
     bun run dev
     ```
     `devcontainer.json` の `postCreateCommand` で `bun install` や Firebase CLIのインストールが設定されていれば、依存関係はコンテナビルド/作成時に自動で処理されます。
 
-### 4.3. 直接 `docker-compose` を使用する場合 (既存の内容をベースに、エミュレータとの連携について触れる)
+### 5.3. 直接 `docker-compose` を使用する場合 (既存の内容をベースに、エミュレータとの連携について触れる)
 
 プロジェクトのルートディレクトリで、ターミナルから以下のコマンドを実行します。
 
@@ -166,7 +189,7 @@ docker-compose up --build
 -   この方法で起動した場合、`docker-compose.yml` の `command` が実行されます。
 -   **注意**: この方法でアプリを起動する場合、Firebase Emulator Suite は別途 Dev Container 内またはホストマシンで `firebase emulators:start` コマンドを使って起動しておく必要があります。`docker-compose.yml` にエミュレータの起動は含まれていません。Admin SDKがエミュレータに接続するための環境変数は `docker-compose.yml` に設定済みです。
 
-## 5. 動作確認
+## 6. 動作確認
 
 アプリケーションが正常に起動すると、ターミナルに「Notifier app is running on port 3000」などのログが表示されます。
 Firebase Emulator Suite も起動していれば、`http://localhost:4000` で Emulator UI にアクセスできます。

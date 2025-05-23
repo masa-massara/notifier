@@ -12,6 +12,8 @@ import type {
 	NotificationClient,
 	NotificationPayload,
 } from "../../domain/services/notificationClient";
+import type { UserNotionIntegrationRepository } from "../../domain/repositories/userNotionIntegrationRepository"; // Added
+import type { EncryptionService } from "../../domain/services/encryptionService"; // Added
 
 // NotionからのWebhookデータの型 (変更なし)
 // biome-ignore lint/suspicious/noExplicitAny: <explanation>
@@ -43,6 +45,8 @@ export class ProcessNotionWebhookUseCase {
 		private readonly notionApiService: NotionApiService,
 		private readonly messageFormatterService: MessageFormatterService,
 		private readonly notificationClient: NotificationClient,
+		private readonly userNotionIntegrationRepository: UserNotionIntegrationRepository, // Added
+		private readonly encryptionService: EncryptionService, // Added
 	) {}
 
 	async execute(input: ProcessNotionWebhookInput): Promise<void> {
@@ -78,48 +82,72 @@ export class ProcessNotionWebhookUseCase {
 		);
 		// pagePropertiesのログも現状維持
 
-		// 1. データベーススキーマを取得 (変更なし)
-		let databaseSchema: NotionDatabaseSchema | null = null;
-		try {
-			databaseSchema =
-				await this.notionApiService.getDatabaseSchema(databaseId);
-			if (!databaseSchema) {
-				console.error(
-					`ProcessNotionWebhookUseCase: Failed to fetch database schema for databaseId: ${databaseId}. Schema is null.`,
-				);
-				return;
-			}
-		} catch (error) {
-			console.error(
-				`ProcessNotionWebhookUseCase: Error during getDatabaseSchema call for databaseId: ${databaseId}`,
-				error,
-			);
-			return;
-		}
-
-		// 2. 該当データベースのテンプレートを取得
+		// 1. Fetch all templates for the databaseId
 		console.log(
 			`ProcessNotionWebhookUseCase: Fetching all templates for databaseId: ${databaseId}`,
 		);
-		// ★★★ 修正点1: findAllByNotionDatabaseId (仮の新しいメソッド名) を使用 ★★★
-		// このメソッドは TemplateRepository インターフェースと実装に追加する必要があるで
-		const templates: Template[] =
+		const allTemplatesForDb: Template[] =
 			await this.templateRepository.findAllByNotionDatabaseId(databaseId);
 		console.log(
-			`ProcessNotionWebhookUseCase: Found ${templates.length} templates for databaseId: ${databaseId}`,
+			`ProcessNotionWebhookUseCase: Found ${allTemplatesForDb.length} templates for databaseId: ${databaseId}`,
 		);
 
-		if (templates.length === 0) {
+		if (allTemplatesForDb.length === 0) {
 			console.log(
 				`ProcessNotionWebhookUseCase: No templates found for databaseId: ${databaseId}. Skipping further processing.`,
 			);
 			return;
 		}
 
-		// 3. 条件に一致するテンプレートを特定 (変更なし)
+		// 2. Find a valid token and fetch database schema
+		let databaseSchema: NotionDatabaseSchema | null = null;
+		let tokenToUseForSchema: string | null = null;
+
+		console.log(`ProcessNotionWebhookUseCase: Attempting to find a usable Notion token for databaseId: ${databaseId}`);
+		for (const tpl of allTemplatesForDb) {
+			if (tpl.userNotionIntegrationId && tpl.userId) {
+				console.log(`ProcessNotionWebhookUseCase: Checking template ID ${tpl.id} (User: ${tpl.userId}, IntegrationID: ${tpl.userNotionIntegrationId}) for token.`);
+				const integration = await this.userNotionIntegrationRepository.findById(tpl.userNotionIntegrationId, tpl.userId);
+				if (integration && integration.encryptedNotionIntegrationToken) {
+					try {
+						tokenToUseForSchema = await this.encryptionService.decrypt(integration.encryptedNotionIntegrationToken);
+						console.log(`ProcessNotionWebhookUseCase: Successfully decrypted token from integration ${integration.id} for user ${tpl.userId}.`);
+						break; // Found a token, exit loop
+					} catch (decryptionError) {
+						console.error(`ProcessNotionWebhookUseCase: Failed to decrypt token for integration ${integration.id} of user ${tpl.userId}. Error:`, decryptionError);
+						// Continue to try other templates' tokens
+					}
+				} else {
+					console.log(`ProcessNotionWebhookUseCase: Integration ${tpl.userNotionIntegrationId} for user ${tpl.userId} not found or has no token.`);
+				}
+			} else {
+				console.log(`ProcessNotionWebhookUseCase: Template ID ${tpl.id} does not have userNotionIntegrationId or userId. Skipping for token search.`);
+			}
+		}
+
+		if (!tokenToUseForSchema) {
+			console.error(`ProcessNotionWebhookUseCase: No valid Notion token found for databaseId: ${databaseId} among ${allTemplatesForDb.length} associated templates. Cannot fetch schema.`);
+			return; // Cannot proceed without a token for schema
+		}
+
+		console.log(`ProcessNotionWebhookUseCase: Attempting to fetch schema for databaseId: ${databaseId} using a user token.`);
+		try {
+			databaseSchema = await this.notionApiService.getDatabaseSchema(databaseId, tokenToUseForSchema);
+		} catch (error) {
+			console.error(`ProcessNotionWebhookUseCase: Error during getDatabaseSchema call for databaseId: ${databaseId} using a user token. Error:`, error);
+			return;
+		}
+
+		if (!databaseSchema) {
+			console.error(`ProcessNotionWebhookUseCase: Failed to fetch database schema for databaseId: ${databaseId} using a user token. Schema is null.`);
+			return;
+		}
+		console.log(`ProcessNotionWebhookUseCase: Successfully fetched schema for databaseId: ${databaseId}.`);
+
+		// 3. Identify matching templates using allTemplatesForDb
 		const matchedTemplates = findMatchingTemplates(
 			pageProperties || {},
-			templates,
+			allTemplatesForDb, // Use all templates fetched earlier
 			databaseSchema,
 		);
 

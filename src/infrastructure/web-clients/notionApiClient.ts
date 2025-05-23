@@ -14,26 +14,27 @@ import type { CacheService } from "../../application/services/cacheService"; // 
 const CACHE_TTL_SECONDS = 1800; // 例: 30分キャッシュ (30 * 60)
 
 export class NotionApiClient implements NotionApiService {
-	private notion: Client;
-	private notionIntegrationToken: string;
 	private cacheService: CacheService; // ★ CacheService を保持するプロパティ
 
-	constructor(notionIntegrationToken: string, cacheService: CacheService) {
+	constructor(cacheService: CacheService) { // notionIntegrationToken removed
 		// ★ 引数に cacheService を追加
-		if (!notionIntegrationToken) {
-			throw new Error(
-				"Notion integration token is required for NotionApiClient.",
-			);
-		}
-		this.notionIntegrationToken = notionIntegrationToken;
-		this.notion = new Client({ auth: this.notionIntegrationToken });
 		this.cacheService = cacheService; // ★ cacheService をプロパティに設定
-		console.log("NotionApiClient initialized with CacheService.");
+		console.log("NotionApiClient initialized with CacheService. Notion Client will be initialized per request.");
 	}
 
 	async getDatabaseSchema(
 		databaseId: string,
+		notionToken: string, // notionToken added
 	): Promise<NotionDatabaseSchema | null> {
+		if (!notionToken) {
+            console.error("NotionApiClient: notionToken was not provided to getDatabaseSchema.");
+            // Or throw an error, depending on desired strictness. For now, log and return null.
+            // Consider if an error should be thrown if no token is provided.
+            // For now, to prevent calls with undefined token:
+            throw new Error("NotionApiClient: notionToken is required to get database schema.");
+        }
+        const notion = new Client({ auth: notionToken }); // Client initialized here
+
 		const cacheKey = `notion_db_schema_${databaseId}`; // キャッシュ用のキー
 
 		// 1. まずキャッシュを確認
@@ -51,7 +52,7 @@ export class NotionApiClient implements NotionApiService {
 
 		// 2. キャッシュになければAPIから取得
 		try {
-			const response = await this.notion.databases.retrieve({
+			const response = await notion.databases.retrieve({ // use local notion client
 				database_id: databaseId,
 			});
 

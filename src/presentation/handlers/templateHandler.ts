@@ -45,22 +45,35 @@ export const createTemplateHandlerFactory = (
 				);
 			}
 
-			const bodyWithoutUserId =
-				await c.req.json<Omit<CreateTemplateInput, "userId">>();
+			// Explicitly define the expected request body structure
+			const requestBody = await c.req.json<{
+				name: string;
+				notionDatabaseId: string;
+				body: string;
+				conditions: CreateTemplateInput['conditions']; // Use from imported CreateTemplateInput
+				destinationId: string;
+				userNotionIntegrationId: string;
+			}>();
 
 			if (
-				!bodyWithoutUserId.name ||
-				!bodyWithoutUserId.notionDatabaseId ||
-				!bodyWithoutUserId.body ||
-				!bodyWithoutUserId.conditions ||
-				!bodyWithoutUserId.destinationId
+				!requestBody.name ||
+				!requestBody.notionDatabaseId ||
+				!requestBody.body ||
+				!requestBody.conditions || // consider Array.isArray(requestBody.conditions)
+				!requestBody.destinationId ||
+				!requestBody.userNotionIntegrationId // Added check
 			) {
 				return c.json({ error: "Missing required fields" }, 400);
 			}
 
 			const input: CreateTemplateInput = {
-				...bodyWithoutUserId,
-				userId: userId,
+				name: requestBody.name,
+				notionDatabaseId: requestBody.notionDatabaseId,
+				body: requestBody.body,
+				conditions: requestBody.conditions,
+				destinationId: requestBody.destinationId,
+				userNotionIntegrationId: requestBody.userNotionIntegrationId, // Pass it here
+				userId: userId, // userId from context
 			};
 
 			const result: CreateTemplateOutput =

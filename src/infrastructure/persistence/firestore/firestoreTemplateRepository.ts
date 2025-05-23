@@ -1,30 +1,36 @@
 // src/infrastructure/persistence/firestore/firestoreTemplateRepository.ts
-import { Template } from "../../../domain/entities/template";
+import { Template, TemplateCondition } from "../../../domain/entities/template"; // Added TemplateCondition
 import type { TemplateRepository } from "../../../domain/repositories/templateRepository";
-// initializeApp, cert, getApps は main.ts で一元管理するのでここでは不要
 import {
-	getFirestore,
 	type Firestore,
 	type QueryDocumentSnapshot,
+	collection, // Added
+	query, // Added
+	where, // Added
+	getDocs, // Added
+	doc, // Added for save, findById, deleteById
+	setDoc, // Added for save
+	getDoc, // Added for findById
+	deleteDoc // Added for deleteById
 } from "firebase-admin/firestore";
 
 // Firestoreのコレクション名
-const TEMPLATES_COLLECTION = "templates";
+const TEMPLATES_COLLECTION = "templates"; // Kept for consistency, but this.collectionName will be used
 
 export class FirestoreTemplateRepository implements TemplateRepository {
 	private db: Firestore;
+	private readonly collectionName = TEMPLATES_COLLECTION; // Added
 
-	constructor() {
-		// Firebase Admin SDKの初期化はmain.tsで行うため、ここでは呼び出さない
-		this.db = getFirestore();
+	constructor(db: Firestore) { // db passed in constructor
+		this.db = db;
 		console.log(
-			"FirestoreTemplateRepository instance created, using centrally initialized Firebase Admin SDK.",
+			"FirestoreTemplateRepository instance created with provided Firestore instance.",
 		);
 	}
 
 	async save(template: Template): Promise<void> {
-		const docRef = this.db.collection(TEMPLATES_COLLECTION).doc(template.id);
-		await docRef.set({
+		const docRef = doc(this.db, this.collectionName, template.id); // Use doc()
+		await setDoc(docRef, { // Use setDoc()
 			id: template.id,
 			name: template.name,
 			notionDatabaseId: template.notionDatabaseId,
@@ -32,8 +38,9 @@ export class FirestoreTemplateRepository implements TemplateRepository {
 			conditions: template.conditions,
 			destinationId: template.destinationId,
 			userId: template.userId,
-			createdAt: template.createdAt,
-			updatedAt: template.updatedAt,
+			userNotionIntegrationId: template.userNotionIntegrationId, // Added this field
+			createdAt: template.createdAt, // Firestore will convert to Timestamp
+			updatedAt: template.updatedAt, // Firestore will convert to Timestamp
 		});
 		console.log(
 			`Template saved to Firestore with ID: ${template.id} for user ${template.userId}`,
@@ -44,8 +51,8 @@ export class FirestoreTemplateRepository implements TemplateRepository {
 		console.log(
 			`Firestore: Attempting to find template with ID: ${id} for user ${userId}`,
 		);
-		const docRef = this.db.collection(TEMPLATES_COLLECTION).doc(id);
-		const docSnap = await docRef.get();
+		const docRef = doc(this.db, this.collectionName, id); // Use doc()
+		const docSnap = await getDoc(docRef); // Use getDoc()
 
 		if (!docSnap.exists) {
 			console.log(`Firestore: Template with ID: ${id} not found.`);
@@ -74,12 +81,10 @@ export class FirestoreTemplateRepository implements TemplateRepository {
 			data.conditions,
 			data.destinationId,
 			data.userId,
-			data.createdAt.toDate
-				? data.createdAt.toDate()
-				: new Date(data.createdAt),
-			data.updatedAt.toDate
-				? data.updatedAt.toDate()
-				: new Date(data.updatedAt),
+			// Firestore Timestamps are assumed to be converted to Date by the SDK or here
+			data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt),
+			data.updatedAt?.toDate ? data.updatedAt.toDate() : new Date(data.updatedAt),
+			data.userNotionIntegrationId || null // Add this new field
 		);
 	}
 
@@ -90,108 +95,71 @@ export class FirestoreTemplateRepository implements TemplateRepository {
 		console.log(
 			`Firestore: Finding templates by notionDatabaseId: ${notionDatabaseId} for user ${userId}`,
 		);
-		const snapshot = await this.db
-			.collection(TEMPLATES_COLLECTION)
-			.where("notionDatabaseId", "==", notionDatabaseId)
-			.where("userId", "==", userId)
-			.get();
+		const q = query( // Use query()
+			collection(this.db, this.collectionName), // Use collection()
+			where("notionDatabaseId", "==", notionDatabaseId),
+			where("userId", "==", userId),
+		);
+		const querySnapshot = await getDocs(q); // Use getDocs()
 
-		if (snapshot.empty) {
+		if (querySnapshot.empty) {
 			return [];
 		}
 
-		return snapshot.docs.map((doc: QueryDocumentSnapshot) => {
-			const data = doc.data();
+		return querySnapshot.docs.map((docSnap: QueryDocumentSnapshot) => { // Use docSnap
+			const data = docSnap.data();
+			// Ensure data.conditions is properly typed or cast
+			const conditions = (data.conditions || []) as TemplateCondition[];
 			return new Template(
-				data.id,
+				docSnap.id, // Use docSnap.id
 				data.name,
 				data.notionDatabaseId,
 				data.body,
-				data.conditions,
+				conditions,
 				data.destinationId,
 				data.userId,
-				data.createdAt.toDate
-					? data.createdAt.toDate()
-					: new Date(data.createdAt),
-				data.updatedAt.toDate
-					? data.updatedAt.toDate()
-					: new Date(data.updatedAt),
+				data.createdAt?.toDate(),
+				data.updatedAt?.toDate(),
+				data.userNotionIntegrationId || null // Add this new field
 			);
 		});
 	}
 
-	// ★★★ 新しいメソッドの実装を追加 ★★★
-	async findAllByNotionDatabaseId(
-		notionDatabaseId: string,
-	): Promise<Template[]> {
-		console.log(
-			`Firestore: Finding all templates by notionDatabaseId: ${notionDatabaseId} (regardless of user)`,
+	async findAllByNotionDatabaseId(notionDatabaseId: string): Promise<Template[]> {
+		const q = query(
+			collection(this.db, this.collectionName),
+			where("notionDatabaseId", "==", notionDatabaseId)
 		);
-		const snapshot = await this.db
-			.collection(TEMPLATES_COLLECTION)
-			.where("notionDatabaseId", "==", notionDatabaseId) // notionDatabaseIdのみでフィルタリング
-			.get();
-
-		if (snapshot.empty) {
-			console.log(
-				`Firestore: No templates found for notionDatabaseId: ${notionDatabaseId}.`,
-			);
-			return [];
-		}
-
-		console.log(
-			`Firestore: Found ${snapshot.docs.length} template documents for notionDatabaseId: ${notionDatabaseId}. Starting mapping...`,
-		);
+		const querySnapshot = await getDocs(q);
 		const templates: Template[] = [];
-		for (const doc of snapshot.docs) {
-			const data = doc.data();
-			try {
-				// Webhook処理では、取得したテンプレートのuserIdも重要になるので、正しくマッピングする
-				if (!data.userId) {
-					console.warn(
-						`Firestore: Document ID ${doc.id} is missing userId. Skipping.`,
-					);
-					continue;
-				}
-				const template = new Template(
-					data.id as string,
-					data.name as string,
-					data.notionDatabaseId as string,
-					data.body as string,
-					// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-					data.conditions as any,
-					data.destinationId as string,
-					data.userId as string, // userIdをマッピング
-					data.createdAt?.toDate
-						? data.createdAt.toDate()
-						: new Date(data.createdAt),
-					data.updatedAt?.toDate
-						? data.updatedAt.toDate()
-						: new Date(data.updatedAt),
-				);
-				templates.push(template);
-			} catch (error) {
-				console.error(
-					`Firestore: Error mapping document ID: ${doc.id}, Data:`,
-					JSON.stringify(data, null, 2),
-					"Error:",
-					error,
-				);
+		querySnapshot.forEach((docSnap) => {
+			if (docSnap.exists()) {
+				const data = docSnap.data();
+				// Ensure data.conditions is properly typed or cast
+				const conditions = (data.conditions || []) as TemplateCondition[];
+				templates.push(new Template(
+					docSnap.id,
+					data.name,
+					data.notionDatabaseId,
+					data.body,
+					conditions, // Make sure this aligns with how conditions are stored
+					data.destinationId,
+					data.userId,
+					data.createdAt?.toDate(), // Convert Firestore Timestamp to Date
+					data.updatedAt?.toDate(), // Convert Firestore Timestamp to Date
+					data.userNotionIntegrationId || null // Add this new field
+				));
 			}
-		}
-		console.log(
-			`Firestore: Finished mapping. Total mapped templates for notionDatabaseId ${notionDatabaseId}: ${templates.length}`,
-		);
+		});
 		return templates;
 	}
-	// ★★★ ここまで追加 ★★★
 
 	async deleteById(id: string, userId: string): Promise<void> {
 		console.log(
 			`Firestore: Attempting to delete template with ID: ${id} for user ${userId}`,
 		);
-		const docRef = this.db.collection(TEMPLATES_COLLECTION).doc(id);
-		const docSnap = await docRef.get();
+		const docRef = doc(this.db, this.collectionName, id); // Use doc()
+		const docSnap = await getDoc(docRef); // Use getDoc()
 
 		if (!docSnap.exists) {
 			console.warn(
@@ -208,7 +176,7 @@ export class FirestoreTemplateRepository implements TemplateRepository {
 			return;
 		}
 
-		await docRef.delete();
+		await deleteDoc(docRef); // Use deleteDoc()
 		console.log(
 			`Template with ID: ${id} for user ${userId} deleted from Firestore.`,
 		);
@@ -218,12 +186,10 @@ export class FirestoreTemplateRepository implements TemplateRepository {
 		console.log(
 			`Firestore: Attempting to find all templates for user ${userId}...`,
 		);
-		const snapshot = await this.db
-			.collection(TEMPLATES_COLLECTION)
-			.where("userId", "==", userId)
-			.get();
+		const q = query(collection(this.db, this.collectionName), where("userId", "==", userId)); // Use query()
+		const querySnapshot = await getDocs(q); // Use getDocs()
 
-		if (snapshot.empty) {
+		if (querySnapshot.empty) {
 			console.log(
 				`Firestore: No templates found in collection for user ${userId}.`,
 			);
@@ -231,38 +197,36 @@ export class FirestoreTemplateRepository implements TemplateRepository {
 		}
 
 		console.log(
-			`Firestore: Found ${snapshot.docs.length} template documents for user ${userId}. Starting mapping...`,
+			`Firestore: Found ${querySnapshot.docs.length} template documents for user ${userId}. Starting mapping...`,
 		);
 		const templates: Template[] = [];
-		for (const doc of snapshot.docs) {
-			const data = doc.data();
+		querySnapshot.forEach((docSnap: QueryDocumentSnapshot) => { // Use forEach and docSnap
+			const data = docSnap.data();
+			// Ensure data.conditions is properly typed or cast
+			const conditions = (data.conditions || []) as TemplateCondition[];
 			try {
 				const template = new Template(
-					data.id as string,
+					docSnap.id, // Use docSnap.id
 					data.name as string,
 					data.notionDatabaseId as string,
 					data.body as string,
-					// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-					data.conditions as any,
+					conditions,
 					data.destinationId as string,
 					data.userId as string,
-					data.createdAt?.toDate
-						? data.createdAt.toDate()
-						: new Date(data.createdAt),
-					data.updatedAt?.toDate
-						? data.updatedAt.toDate()
-						: new Date(data.updatedAt),
+					data.createdAt?.toDate(),
+					data.updatedAt?.toDate(),
+					data.userNotionIntegrationId || null // Add this new field
 				);
 				templates.push(template);
 			} catch (error) {
 				console.error(
-					`Firestore: Error mapping document ID: ${doc.id}, Data:`,
+					`Firestore: Error mapping document ID: ${docSnap.id}, Data:`,
 					JSON.stringify(data, null, 2),
 					"Error:",
 					error,
 				);
 			}
-		}
+		});
 		console.log(
 			`Firestore: Finished mapping. Total mapped templates for user ${userId}: ${templates.length}`,
 		);

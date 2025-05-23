@@ -4,6 +4,9 @@ import {
 	type TemplateCondition,
 } from "../../domain/entities/template";
 import type { TemplateRepository } from "../../domain/repositories/templateRepository";
+import type { UserNotionIntegrationRepository } from "../../domain/repositories/userNotionIntegrationRepository";
+import type { EncryptionService } from "../../domain/services/encryptionService";
+import type { NotionApiService } from "../../domain/services/notionApiService";
 import { v4 as uuidv4 } from "uuid"; // ID生成用
 
 // ユースケースに入力されるデータのための型 (DTO: Data Transfer Object)
@@ -13,7 +16,8 @@ export interface CreateTemplateInput {
 	body: string;
 	conditions: TemplateCondition[]; // Templateエンティティで定義した型を使う
 	destinationId: string;
-	userId: string; // ★★★ Input DTOにuserIdを追加 ★★★
+	userId: string;
+	userNotionIntegrationId: string; // Added
 }
 
 // ユースケースが出力するデータのための型 (DTO) - 作成されたテンプレートを返す場合
@@ -24,20 +28,67 @@ export interface CreateTemplateOutput {
 	body: string;
 	conditions: TemplateCondition[];
 	destinationId: string;
-	userId: string; // ★★★ Output DTOにuserIdを追加 ★★★
+	userId: string;
+	userNotionIntegrationId: string | null; // Added
 	createdAt: Date;
 	updatedAt: Date;
 }
 
 export class CreateTemplateUseCase {
-	// このユースケースはTemplateRepositoryに依存する
-	constructor(private readonly templateRepository: TemplateRepository) {}
+	constructor(
+		private readonly templateRepository: TemplateRepository,
+		private readonly userNotionIntegrationRepository: UserNotionIntegrationRepository,
+		private readonly encryptionService: EncryptionService,
+		private readonly notionApiService: NotionApiService,
+	) {}
 
 	async execute(input: CreateTemplateInput): Promise<CreateTemplateOutput> {
-		// 1. 新しいIDを生成
+		// 1. Fetch and validate UserNotionIntegration
+		const integration = await this.userNotionIntegrationRepository.findById(
+			input.userNotionIntegrationId,
+			input.userId,
+		);
+
+		if (!integration) {
+			throw new Error("UserNotionIntegration not found or access denied.");
+		}
+		// Note: findById should ideally prevent integration.userId !== input.userId
+		// but a double check or reliance on repository's strictness is fine.
+
+		// 2. Decrypt Notion token
+		let decryptedToken: string;
+		try {
+			decryptedToken = await this.encryptionService.decrypt(
+				integration.encryptedNotionIntegrationToken,
+			);
+		} catch (error) {
+			console.error("Failed to decrypt Notion token:", error);
+			throw new Error("Failed to process Notion integration token.");
+		}
+
+		// 3. Verify database access with Notion API
+		try {
+			const dbSchema = await this.notionApiService.getDatabaseSchema(
+				input.notionDatabaseId,
+				decryptedToken,
+			);
+			if (!dbSchema) {
+				throw new Error(
+					"Failed to access Notion database with the provided integration. Ensure the token is valid and has permissions to the database.",
+				);
+			}
+		} catch (error: any) {
+			// Catch errors from getDatabaseSchema (e.g., API errors, token invalid)
+			console.error("Error verifying Notion database access:", error.message);
+			throw new Error(
+				`Failed to access Notion database: ${error.message || "Unknown error during schema retrieval."}`,
+			);
+		}
+
+		// 4. Generate new ID for Template
 		const id = uuidv4();
 
-		// 2. Templateエンティティを作成
+		// 5. Create Template entity
 		const newTemplate = new Template(
 			id,
 			input.name,
@@ -45,14 +96,20 @@ export class CreateTemplateUseCase {
 			input.body,
 			input.conditions,
 			input.destinationId,
-			input.userId, // ★★★ エンティティ生成時にuserIdを渡す ★★★
-			// createdAt と updatedAt はエンティティのコンストラクタでデフォルト値が設定される
+			input.userId,
+			// userNotionIntegrationId is the 8th argument in Template constructor, so pass it correctly
+			// The constructor is: id, name, notionDBId, body, conditions, destId, userId, userNotionIntegrationId, createdAt, updatedAt
+			// So we need to pass userNotionIntegrationId before createdAt and updatedAt if they are optional.
+			// The current Template constructor expects userNotionIntegrationId *after* userId and *before* createdAt/updatedAt.
+			input.userNotionIntegrationId, // Pass the new field
+			undefined, // createdAt - let constructor default
+			undefined, // updatedAt - let constructor default
 		);
-
-		// 3. リポジトリを使ってエンティティを保存
+		
+		// 6. Save Template entity
 		await this.templateRepository.save(newTemplate);
 
-		// 4. 保存されたエンティティの情報をOutput DTOとして返す
+		// 7. Return Output DTO
 		return {
 			id: newTemplate.id,
 			name: newTemplate.name,
@@ -60,7 +117,8 @@ export class CreateTemplateUseCase {
 			body: newTemplate.body,
 			conditions: newTemplate.conditions,
 			destinationId: newTemplate.destinationId,
-			userId: newTemplate.userId, // ★★★ OutputにもuserIdを含める ★★★
+			userId: newTemplate.userId,
+			userNotionIntegrationId: newTemplate.userNotionIntegrationId, // Include new field
 			createdAt: newTemplate.createdAt,
 			updatedAt: newTemplate.updatedAt,
 		};
