@@ -53,6 +53,7 @@
     {
       "name": "string (必須, テンプレートの管理名)",
       "notionDatabaseId": "string (必須, 通知のトリガーとなる Notion データベースの ID)",
+      "userNotionIntegrationId": "string (必須, このテンプレートが使用する User Notion Integration の ID)",
       "body": "string (必須, 通知メッセージの本文。プレースホルダ使用可)",
       "conditions": [
         {
@@ -72,6 +73,7 @@
           "id": "string (自動生成されたテンプレート ID)",
           "name": "string",
           "notionDatabaseId": "string",
+          "userNotionIntegrationId": "string | null (テンプレートが使用する User Notion Integration の ID)",
           "body": "string",
           "conditions": [ /* ... */ ],
           "destinationId": "string",
@@ -152,6 +154,7 @@
     {
       "name": "string (オプション)",
       "notionDatabaseId": "string (オプション)",
+      "userNotionIntegrationId": "string | null (オプション, このテンプレートが使用する User Notion Integration の ID。null を指定すると連携解除)",
       "body": "string (オプション)",
       "conditions": [ /* ... */ ],
       "destinationId": "string (オプション)"
@@ -159,7 +162,7 @@
     ```
 -   **レスポンス (成功時)**:
     -   ステータスコード: `200 OK`
-    -   ボディ (JSON): 更新されたテンプレートオブジェクト
+    -   ボディ (JSON): 更新されたテンプレートオブジェクト (上記1.1.の成功レスポンスボディと同様の形式)
 -   **レスポンス (エラー時)**:
     -   `400 Bad Request`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`, `500 Internal Server Error`
 -   **curl コマンド例**:
@@ -167,7 +170,7 @@
     curl -X PUT http://localhost:3000/api/v1/templates/your_template_id_here \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer YOUR_ID_TOKEN_HERE" \
-     -d '{"name": "更新後のテンプレート名", "body": "更新されたメッセージ本文！"}'
+     -d '{"name": "更新後のテンプレート名", "body": "更新されたメッセージ本文！", "userNotionIntegrationId": "new_integration_id"}'
     ```
 
 ### 1.5. テンプレートの削除
@@ -189,7 +192,106 @@
      -H "Authorization: Bearer YOUR_ID_TOKEN_HERE"
     ```
 
-## 2. Destinations (通知送信先管理)
+## 2. User Notion Integrations (ユーザーNotion連携管理)
+
+認証されたユーザーが自身のNotionインテグレーションTOKENを登録・管理するためのエンドポイントです。ここで登録されたNotion連携は、通知テンプレート作成時に指定することで、そのテンプレートがユーザーのNotionデータベースにアクセスする際に使用されます。
+
+### 2.1. Notion連携の登録
+
+-   **エンドポイント**: `POST /api/v1/me/notion-integrations`
+-   **説明**: 認証されたユーザーのために新しいNotion連携を登録します。**認証が必要です。**
+-   **リクエストヘッダー**:
+    -   `Content-Type: application/json`
+    -   `Authorization: Bearer <ID_TOKEN>`
+-   **リクエストボディ (JSON)**:
+    ```json
+    {
+      "integrationName": "string (必須, この連携の管理名)",
+      "notionIntegrationToken": "string (必須, ユーザーのNotion内部インテグレーションTOKEN)"
+    }
+    ```
+-   **レスポンス (成功時)**:
+    -   ステータスコード: `201 Created`
+    -   ボディ (JSON): 作成されたNotion連携情報（**注意: `notionIntegrationToken` は返却されません**）
+        ```json
+        {
+          "id": "string (自動生成された連携ID)",
+          "integrationName": "string",
+          "userId": "string (所有者のユーザーID)",
+          "createdAt": "string (ISO 8601 形式の日時)",
+          "updatedAt": "string (ISO 8601 形式の日時)"
+        }
+        ```
+-   **レスポンス (エラー時)**:
+    -   ステータスコード: `400 Bad Request` (例: 必須フィールドの欠如)
+    -   ステータスコード: `401 Unauthorized`
+    -   ステータスコード: `500 Internal Server Error`
+-   **curl コマンド例**:
+    ```bash
+    curl -X POST http://localhost:3000/api/v1/me/notion-integrations \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer YOUR_ID_TOKEN_HERE" \
+     -d '{"integrationName": "マイ Notion ワークスペース連携", "notionIntegrationToken": "secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}'
+    ```
+
+### 2.2. Notion連携一覧の取得
+
+-   **エンドポイント**: `GET /api/v1/me/notion-integrations`
+-   **説明**: 認証されたユーザーが登録したNotion連携の一覧を取得します。**認証が必要です。**
+-   **リクエストヘッダー**:
+    -   `Authorization: Bearer <ID_TOKEN>`
+-   **レスポンス (成功時)**:
+    -   ステータスコード: `200 OK`
+    -   ボディ (JSON): Notion連携情報の配列（**注意: `notionIntegrationToken` は返却されません**）
+        ```json
+        [
+          {
+            "id": "string",
+            "integrationName": "string",
+            "createdAt": "string (ISO 8601 形式の日時)",
+            "updatedAt": "string (ISO 8601 形式の日時)"
+          }
+        ]
+        ```
+-   **レスポンス (エラー時)**:
+    -   ステータスコード: `401 Unauthorized`
+    -   ステータスコード: `500 Internal Server Error`
+-   **curl コマンド例**:
+    ```bash
+    curl -X GET http://localhost:3000/api/v1/me/notion-integrations \
+     -H "Authorization: Bearer YOUR_ID_TOKEN_HERE"
+    ```
+
+### 2.3. Notion連携の削除
+
+-   **エンドポイント**: `DELETE /api/v1/me/notion-integrations/:integrationId`
+-   **説明**: 指定されたIDのNotion連携を削除します。認証されたユーザーが所有するものに限ります。**認証が必要です。**
+-   **パスパラメータ**:
+    -   `integrationId` (string, 必須): 削除したいNotion連携のID。
+-   **リクエストヘッダー**:
+    -   `Authorization: Bearer <ID_TOKEN>`
+-   **レスポンス (成功時)**:
+    -   ステータスコード: `200 OK`
+    -   ボディ (JSON):
+        ```json
+        {
+          "success": true,
+          "message": "Notion integration deleted successfully."
+        }
+        ```
+        (または、ステータスコード `204 No Content` でボディなし)
+-   **レスポンス (エラー時)**:
+    -   ステータスコード: `401 Unauthorized`
+    -   ステータスコード: `403 Forbidden` (他のユーザーのリソースを削除しようとした場合)
+    -   ステータスコード: `404 Not Found`
+    -   ステータスコード: `500 Internal Server Error`
+-   **curl コマンド例**:
+    ```bash
+    curl -X DELETE http://localhost:3000/api/v1/me/notion-integrations/your_integration_id_here \
+     -H "Authorization: Bearer YOUR_ID_TOKEN_HERE"
+    ```
+
+## 4. Destinations (通知送信先管理)
 
 通知を送信する先の Webhook URL を管理するためのエンドポイントです。
 
@@ -304,11 +406,11 @@
      -H "Authorization: Bearer YOUR_ID_TOKEN_HERE"
     ```
 
-## 3. Notion Webhook 受信
+## 5. Notion Webhook 受信
 
 Notion からの Webhook リクエストを受信し、通知処理を開始するためのエンドポイントです。
 
-### 3.1. Webhook 受信
+### 5.1. Webhook 受信
 
 -   **エンドポイント**: `POST /webhooks/notion`
 -   **説明**: Notion のデータベース自動化から送信される Webhook リクエストを受信します。

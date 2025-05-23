@@ -22,9 +22,10 @@ export interface NotionApiService {
 	/**
 	 * 指定されたデータベースIDのスキーマ情報（プロパティ定義など）を取得する
 	 * @param databaseId 取得対象のNotionデータベースID
+	 * @param userNotionToken ユーザー固有のNotionインテグレーションTOKEN
 	 * @returns データベーススキーマ情報、または見つからない場合はnull
 	 */
-	getDatabaseSchema(databaseId: string): Promise<NotionDatabaseSchema | null>;
+	getDatabaseSchema(databaseId: string, userNotionToken: string): Promise<NotionDatabaseSchema | null>;
 
 	// 今後、もしNotionからページ情報を直接取得する必要が出てきたら、こんなメソッドも追加するかもしれんな
 	// getPageProperties(pageId: string): Promise<Record<string, any> | null>;
