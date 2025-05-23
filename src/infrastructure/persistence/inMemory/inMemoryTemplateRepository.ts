@@ -1,56 +1,73 @@
 // src/infrastructure/persistence/inMemory/inMemoryTemplateRepository.ts
-import type { Template } from "../../../domain/entities/template"; // ドメイン層のエンティティをインポート
-import type { TemplateRepository } from "../../../domain/repositories/templateRepository"; // ドメイン層のリポジトリインターフェースをインポート
-import { v4 as uuidv4 } from "uuid"; // ID生成用にuuidライブラリを使う（あとでインストールする）
+import type { Template } from "../../../domain/entities/template";
+import type { TemplateRepository } from "../../../domain/repositories/templateRepository";
+// uuidのインポートは元のファイルにあればそのまま使う
+// import { v4 as uuidv4 } from "uuid";
 
 export class InMemoryTemplateRepository implements TemplateRepository {
-	// テンプレートを保存するためのプライベートな配列
 	private readonly templates: Template[] = [];
 
 	async save(template: Template): Promise<void> {
-		// まず、同じIDのテンプレートが既に存在するかどうかを確認
 		const existingIndex = this.templates.findIndex((t) => t.id === template.id);
-
 		if (existingIndex > -1) {
-			// 存在する場合は、既存のテンプレートを更新する
 			this.templates[existingIndex] = template;
 		} else {
-			// 存在しない場合は、新しいテンプレートとして追加する
-			// もしtemplateにIDがなければ、ここで新たにIDを振っても良い
-			// (今回はエンティティのコンストラクタでIDが必須になっている前提)
 			this.templates.push(template);
 		}
-		// インメモリなので、Promiseを返すために `Promise.resolve()` を使う
 		return Promise.resolve();
 	}
 
-	async findById(id: string): Promise<Template | null> {
-		const template = this.templates.find((t) => t.id === id);
+	async findById(id: string, userId: string): Promise<Template | null> {
+		// userId を引数に追加 (インターフェースに合わせて)
+		const template = this.templates.find(
+			(t) => t.id === id && t.userId === userId,
+		);
 		return Promise.resolve(template || null);
 	}
 
-	async findByNotionDatabaseId(notionDatabaseId: string): Promise<Template[]> {
+	async findByNotionDatabaseId(
+		notionDatabaseId: string,
+		userId: string,
+	): Promise<Template[]> {
+		// userId を引数に追加
+		const foundTemplates = this.templates.filter(
+			(t) => t.notionDatabaseId === notionDatabaseId && t.userId === userId,
+		);
+		return Promise.resolve(foundTemplates);
+	}
+
+	// ★★★ 新しいメソッドの実装を追加 ★★★
+	async findAllByNotionDatabaseId(
+		notionDatabaseId: string,
+	): Promise<Template[]> {
+		console.log(
+			`InMemory: Finding all templates by notionDatabaseId: ${notionDatabaseId} (regardless of user)`,
+		);
 		const foundTemplates = this.templates.filter(
 			(t) => t.notionDatabaseId === notionDatabaseId,
 		);
 		return Promise.resolve(foundTemplates);
 	}
+	// ★★★ ここまで追加 ★★★
 
-	async deleteById(id: string): Promise<void> {
-		const index = this.templates.findIndex((t) => t.id === id);
+	async deleteById(id: string, userId: string): Promise<void> {
+		// userId を引数に追加
+		const index = this.templates.findIndex(
+			(t) => t.id === id && t.userId === userId,
+		);
 		if (index > -1) {
-			this.templates.splice(index, 1); // 配列から削除
+			this.templates.splice(index, 1);
 		}
 		return Promise.resolve();
 	}
 
-	// findAllもインターフェースに合わせて実装
-	async findAll(): Promise<Template[]> {
-		return Promise.resolve([...this.templates]); // 配列のコピーを返すのが安全
+	async findAll(userId: string): Promise<Template[]> {
+		// userId を引数に追加
+		const foundTemplates = this.templates.filter((t) => t.userId === userId);
+		return Promise.resolve([...foundTemplates]); // 配列のコピーを返す
 	}
 
-	// (テスト用、またはデバッグ用) 配列をクリアするメソッド
 	clear(): void {
-		this.templates.length = 0; // 配列を空にする
+		this.templates.length = 0;
 	}
 }

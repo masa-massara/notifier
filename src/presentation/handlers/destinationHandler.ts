@@ -1,51 +1,68 @@
 // src/presentation/handlers/destinationHandler.ts
 import type { Context } from "hono";
+// ユースケースのInput/Output型は、userIdを含むように修正されたものをインポートする
 import type {
 	CreateDestinationUseCase,
-	CreateDestinationInput,
-	CreateDestinationOutput,
+	CreateDestinationInput, // userId を含む
+	CreateDestinationOutput, // userId を含む
 } from "../../application/usecases/createDestinationUseCase";
 
 import type {
 	GetDestinationUseCase,
-	GetDestinationInput,
-	GetDestinationOutput,
+	GetDestinationInput, // userId を含む
+	GetDestinationOutput, // userId を含む Destination | null
 } from "../../application/usecases/getDestinationUseCase";
 
 import type {
 	ListDestinationsUseCase,
-	ListDestinationsOutput,
+	ListDestinationsInput, // userId を含む
+	ListDestinationsOutput, // userId を含む Destination[]
 } from "../../application/usecases/listDestinationsUseCase";
 
 import type {
 	UpdateDestinationUseCase,
-	UpdateDestinationInput,
-	UpdateDestinationOutput,
+	UpdateDestinationInput, // userId を含む
+	UpdateDestinationOutput, // userId を含む Destination
 } from "../../application/usecases/updateDestinationUseCase";
 
 import type {
 	DeleteDestinationUseCase,
-	DeleteDestinationInput,
+	DeleteDestinationInput, // userId を含む
 } from "../../application/usecases/deleteDestinationUseCase";
 
 export const createDestinationHandlerFactory = (
 	createDestinationUseCase: CreateDestinationUseCase,
 ) => {
-	console.log("--- createDestinationHandlerFactory called ---"); // 起動時に呼ばれるログ
 	return async (c: Context): Promise<Response> => {
-		console.log("--- createDestinationHandler (actual handler) called ---"); // リクエスト時に呼ばれるログ
 		try {
-			const body = await c.req.json<CreateDestinationInput>();
+			const userId = c.get("userId") as string | undefined; // ★ userIdを取得
+			if (!userId) {
+				console.error(
+					"Error in createDestinationHandler: userId not found in context.",
+				);
+				return c.json(
+					{ error: "Unauthorized", message: "User ID not found." },
+					401,
+				);
+			}
 
-			if (!body.webhookUrl) {
-				// Webhook URLは必須
+			const bodyWithoutUserId =
+				await c.req.json<Omit<CreateDestinationInput, "userId">>();
+
+			if (!bodyWithoutUserId.webhookUrl) {
 				return c.json({ error: "webhookUrl is required" }, 400);
 			}
 
-			const result: CreateDestinationOutput =
-				await createDestinationUseCase.execute(body);
+			const input: CreateDestinationInput = {
+				// ★ InputにuserIdをセット
+				...bodyWithoutUserId,
+				userId: userId,
+			};
 
-			return c.json(result, 201); // 201 Created
+			const result: CreateDestinationOutput =
+				await createDestinationUseCase.execute(input);
+
+			return c.json(result, 201);
 			// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 		} catch (error: any) {
 			console.error("Error in createDestinationHandler:", error);
@@ -53,6 +70,12 @@ export const createDestinationHandlerFactory = (
 				return c.json(
 					{ error: "Validation failed", details: error.message },
 					400,
+				);
+			}
+			if (error.message.includes("not found or not accessible")) {
+				return c.json(
+					{ error: "Forbidden or Not Found", details: error.message },
+					403,
 				);
 			}
 			return c.json(
@@ -66,16 +89,25 @@ export const createDestinationHandlerFactory = (
 export const getDestinationByIdHandlerFactory = (
 	getDestinationUseCase: GetDestinationUseCase,
 ) => {
-	console.log("--- getDestinationByIdHandlerFactory called ---"); // 起動時に呼ばれるログ
 	return async (c: Context): Promise<Response> => {
-		console.log("--- getDestinationByIdHandler (actual handler) called ---"); // リクエスト時に呼ばれるログ
 		try {
+			const userId = c.get("userId") as string | undefined; // ★ userIdを取得
+			if (!userId) {
+				console.error(
+					"Error in getDestinationByIdHandler: userId not found in context.",
+				);
+				return c.json(
+					{ error: "Unauthorized", message: "User ID not found." },
+					401,
+				);
+			}
+
 			const id = c.req.param("id");
 			if (!id) {
 				return c.json({ error: "Destination ID is required" }, 400);
 			}
 
-			const input: GetDestinationInput = { id };
+			const input: GetDestinationInput = { id, userId: userId }; // ★ InputにuserIdをセット
 			const result: GetDestinationOutput =
 				await getDestinationUseCase.execute(input);
 
@@ -87,6 +119,12 @@ export const getDestinationByIdHandlerFactory = (
 			// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 		} catch (error: any) {
 			console.error("Error in getDestinationByIdHandler:", error);
+			if (error.message.includes("not found or not accessible")) {
+				return c.json(
+					{ error: "Forbidden or Not Found", details: error.message },
+					403,
+				);
+			}
 			return c.json(
 				{ error: "Failed to get destination", details: error.message },
 				500,
@@ -98,17 +136,29 @@ export const getDestinationByIdHandlerFactory = (
 export const listDestinationsHandlerFactory = (
 	listDestinationsUseCase: ListDestinationsUseCase,
 ) => {
-	console.log("--- listDestinationsHandlerFactory called ---"); // 起動時に呼ばれるログ
 	return async (c: Context): Promise<Response> => {
-		console.log("--- listDestinationsHandler (actual handler) called ---"); // リクエスト時に呼ばれるログ
 		try {
-			console.log("Handler: Calling ListDestinationsUseCase...");
-			const result: ListDestinationsOutput =
-				await listDestinationsUseCase.execute();
+			const userId = c.get("userId") as string | undefined; // ★ userIdを取得
+			if (!userId) {
+				console.error(
+					"Error in listDestinationsHandler: userId not found in context.",
+				);
+				return c.json(
+					{ error: "Unauthorized", message: "User ID not found." },
+					401,
+				);
+			}
+
+			const input: ListDestinationsInput = { userId: userId }; // ★ InputにuserIdをセット
 			console.log(
-				`Handler: ListDestinationsUseCase returned ${result.length} destinations.`,
+				`Handler: Calling ListDestinationsUseCase for user ${userId}...`,
 			);
-			return c.json(result, 200); // 200 OK
+			const result: ListDestinationsOutput =
+				await listDestinationsUseCase.execute(input);
+			console.log(
+				`Handler: ListDestinationsUseCase returned ${result.length} destinations for user ${userId}.`,
+			);
+			return c.json(result, 200);
 			// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 		} catch (error: any) {
 			console.error("Error in listDestinationsHandler:", error);
@@ -123,25 +173,40 @@ export const listDestinationsHandlerFactory = (
 export const updateDestinationHandlerFactory = (
 	updateDestinationUseCase: UpdateDestinationUseCase,
 ) => {
-	console.log("--- updateDestinationHandlerFactory called ---");
 	return async (c: Context): Promise<Response> => {
-		console.log("--- updateDestinationHandler (actual handler) called ---");
 		try {
+			const userId = c.get("userId") as string | undefined; // ★ userIdを取得
+			if (!userId) {
+				console.error(
+					"Error in updateDestinationHandler: userId not found in context.",
+				);
+				return c.json(
+					{ error: "Unauthorized", message: "User ID not found." },
+					401,
+				);
+			}
+
 			const id = c.req.param("id");
 			if (!id) {
 				return c.json({ error: "Destination ID is required in path" }, 400);
 			}
 
-			const body = await c.req.json<Omit<UpdateDestinationInput, "id">>();
+			const bodyWithoutUserId =
+				await c.req.json<Omit<UpdateDestinationInput, "id" | "userId">>();
 
-			if (Object.keys(body).length === 0) {
+			if (Object.keys(bodyWithoutUserId).length === 0) {
 				return c.json(
 					{ error: "Request body cannot be empty for update" },
 					400,
 				);
 			}
 
-			const input: UpdateDestinationInput = { id, ...body };
+			const input: UpdateDestinationInput = {
+				// ★ InputにuserIdをセット
+				id,
+				...bodyWithoutUserId,
+				userId: userId,
+			};
 			console.log(
 				"Handler: Calling UpdateDestinationUseCase with input:",
 				input,
@@ -150,12 +215,16 @@ export const updateDestinationHandlerFactory = (
 				await updateDestinationUseCase.execute(input);
 			console.log("Handler: UpdateDestinationUseCase returned:", result);
 
-			return c.json(result, 200); // 200 OK
+			return c.json(result, 200);
 			// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 		} catch (error: any) {
 			console.error("Error in updateDestinationHandler:", error);
-			if (error.message.includes("not found")) {
-				return c.json({ error: "Destination not found" }, 404);
+			if (error.message.includes("not found or not accessible")) {
+				// "not found" だけだと曖昧なので、より具体的に
+				return c.json(
+					{ error: "Destination not found or not accessible" },
+					404,
+				); // 403 or 404
 			}
 			if (
 				error.message.includes("Invalid Webhook URL format") ||
@@ -177,16 +246,25 @@ export const updateDestinationHandlerFactory = (
 export const deleteDestinationHandlerFactory = (
 	deleteDestinationUseCase: DeleteDestinationUseCase,
 ) => {
-	console.log("--- deleteDestinationHandlerFactory called ---");
 	return async (c: Context): Promise<Response> => {
-		console.log("--- deleteDestinationHandler (actual handler) called ---");
 		try {
+			const userId = c.get("userId") as string | undefined; // ★ userIdを取得
+			if (!userId) {
+				console.error(
+					"Error in deleteDestinationHandler: userId not found in context.",
+				);
+				return c.json(
+					{ error: "Unauthorized", message: "User ID not found." },
+					401,
+				);
+			}
+
 			const id = c.req.param("id");
 			if (!id) {
 				return c.json({ error: "Destination ID is required in path" }, 400);
 			}
 
-			const input: DeleteDestinationInput = { id };
+			const input: DeleteDestinationInput = { id, userId: userId }; // ★ InputにuserIdをセット
 			console.log(
 				"Handler: Calling DeleteDestinationUseCase with input:",
 				input,
@@ -194,10 +272,16 @@ export const deleteDestinationHandlerFactory = (
 			await deleteDestinationUseCase.execute(input);
 			console.log("Handler: DeleteDestinationUseCase processed.");
 
-			return c.body(null, 204); // 204 No Content
+			return c.body(null, 204);
 			// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 		} catch (error: any) {
 			console.error("Error in deleteDestinationHandler:", error);
+			if (error.message.includes("not found or not accessible")) {
+				return c.json(
+					{ error: "Destination not found or not accessible" },
+					404,
+				); // 403 or 404
+			}
 			return c.json(
 				{ error: "Failed to delete destination", details: error.message },
 				500,

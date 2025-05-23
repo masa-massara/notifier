@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from "uuid"; // ID生成用
 export interface CreateDestinationInput {
 	webhookUrl: string;
 	name?: string; // 送信先名はオプション
+	userId: string; // ★★★ Input DTOにuserIdを追加 ★★★
 }
 
 // ユースケースが出力するデータのための型 (DTO) - 作成された送信先情報を返す
@@ -14,6 +15,7 @@ export interface CreateDestinationOutput {
 	id: string;
 	webhookUrl: string;
 	name?: string;
+	userId: string; // ★★★ Output DTOにuserIdを追加 ★★★
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -30,6 +32,7 @@ export class CreateDestinationUseCase {
 		const newDestination = new Destination(
 			id,
 			input.webhookUrl,
+			input.userId, // ★★★ エンティティ生成時にuserIdを渡す (nameより前が良いかも) ★★★
 			input.name,
 			// createdAt と updatedAt はエンティティのコンストラクタでデフォルト値が設定される
 		);
@@ -42,6 +45,7 @@ export class CreateDestinationUseCase {
 			id: newDestination.id,
 			webhookUrl: newDestination.webhookUrl,
 			name: newDestination.name,
+			userId: newDestination.userId, // ★★★ OutputにもuserIdを含める ★★★
 			createdAt: newDestination.createdAt,
 			updatedAt: newDestination.updatedAt,
 		};
