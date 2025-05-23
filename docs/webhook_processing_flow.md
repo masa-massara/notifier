@@ -6,21 +6,21 @@
 
 ## 処理フロー図 (概要)
 
-```
+```mermaid
 graph TD
-A[Notion Webhook 受信<br>(POST /webhooks/notion)] --> B{NotionWebhookHandler};
-B --> C{ProcessNotionWebhookUseCase};
-C --> D{NotionApiService<br>(getDatabaseSchema)};
-D --> E{CacheService<br>(get/set)};
-E --> F[Notion API];
-C --> G{TemplateRepository<br>(findByNotionDatabaseId)};
-G --> H[Firestore<br>(Templates)];
-C --> I{templateMatcherService<br>(findMatchingTemplates)};
-C --> J{MessageFormatterService<br>(format)};
-C --> K{DestinationRepository<br>(findById)};
-K --> L[Firestore<br>(Destinations)];
-C --> M{NotificationClient<br>(send)};
-M --> N[外部チャットツール<br>(Discord, Teams 等)];
+    A["Notion Webhook受信<br>(POST /webhooks/notion)"] --> B{NotionWebhookHandler};
+    B --> C{ProcessNotionWebhookUseCase};
+    C --> D["NotionApiService<br>(getDatabaseSchema)"];
+    D --> E["CacheService<br>(get/set)"];
+    E --> F[Notion API];
+    C --> G["TemplateRepository<br>(findByNotionDatabaseId)"];
+    G --> H["Firestore<br>(Templates)"];
+    C --> I["templateMatcherService<br>(findMatchingTemplates)"];
+    C --> J["MessageFormatterService<br>(format)"];
+    C --> K["DestinationRepository<br>(findById)"];
+    K --> L["Firestore<br>(Destinations)"];
+    C --> M["NotificationClient<br>(send)"];
+    M --> N["外部チャットツール<br>(Discord, Teams等)"];
 
     style A fill:#cfc,stroke:#333
     style B fill:#cfc,stroke:#333
@@ -36,7 +36,6 @@ M --> N[外部チャットツール<br>(Discord, Teams 等)];
     style L fill:#ffc,stroke:#333
     style M fill:#ccf,stroke:#333
     style N fill:#cfc,stroke:#333
-
 ```
 _(この図は Mermaid 形式のコードです。対応するビューアで表示すると図としてレンダリングされます)_
 
