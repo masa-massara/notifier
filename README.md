@@ -38,6 +38,7 @@ Notifier App は、Notion データベース内のページの変更をトリガ
     ```env
     # NOTION_INTEGRATION_TOKEN="your_notion_integration_secret_here" # (DEPRECATED - See below)
     ENCRYPTION_KEY="your_64_character_hex_encryption_key_for_aes_256_gcm" # ★★★ NEW ★★★
+    # TEST_USER_MOCK_NOTION_TOKEN="mock_secret_for_seed_script_if_needed" # (Optional - For seed script)
 
     # GOOGLE_APPLICATION_CREDENTIALS は docker-compose.yml 経由で設定されます
     # PORT=3000 # 必要であれば指定 (デフォルト3000)
@@ -46,6 +47,7 @@ Notifier App は、Notion データベース内のページの変更をトリガ
 
     -   `NOTION_INTEGRATION_TOKEN`: (非推奨) 以前はグローバルなNotionインテグレーションTOKENとして使用されていましたが、現在はユーザーごとのNotionインテグレーション機能 (`/api/v1/me/notion-integrations`) の導入により、このグローバルTOKENはAPIの主要機能では使用されなくなりました。特定のスタンドアロンプロセスや将来的な管理機能のために残す可能性もありますが、通常のユーザー操作では不要です。詳細は `docs/setup_detailed.md` を参照してください。
     -   `ENCRYPTION_KEY`: ★★★ 新規追加 ★★★ ユーザーのNotionインテグレーションTOKENを暗号化・復号化するために必須のキーです。**必ず64文字の16進数文字列（32バイトのキーに相当）を設定してください。** キーの生成例: `openssl rand -hex 32`。
+    -   `TEST_USER_MOCK_NOTION_TOKEN`: (オプション) `seed_mock_data.sh` スクリプトが使用するモックのNotionインテグレーションTOKENです。設定されていない場合、スクリプトはデフォルトのモック値を使用します。これは実際の有効なTOKENである必要はありません。
     -   **注意**: `.env` ファイルは `.gitignore` に追加し、Git リポジトリにコミットしないでください。
 
 2.  **Google Cloud サービスアカウントキーの配置**:
