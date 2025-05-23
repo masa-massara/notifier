@@ -10,6 +10,8 @@
     -   [Docker 公式サイト](https://www.docker.com/products/docker-desktop/) からご自身の OS に合った Docker Desktop をインストールしてください。
 -   **Docker Compose**: 複数のコンテナで構成されるアプリケーションを定義・実行するためのツール。
     -   Docker Desktop には通常、Docker Compose が含まれています。
+-   **VSCode (Visual Studio Code)**: 推奨エディタ。
+-   **VSCode Dev Containers 拡張機能**: VSCodeで開発コンテナを利用するために必要です。
 
 ## 2. プロジェクトの取得
 
@@ -26,85 +28,133 @@ Notifier アプリは、動作するためにいくつかの外部サービス�
 
 ### 3.1. Notion インテグレーション
 
-Notion API を利用してデータベースの情報を取得するために、Notion インテグレーションを作成し、インテグレーションシークレット（トークン）を取得する必要があります。
-
-1.  **Notion でインテグレーションを作成**:
-    -   Notion ワークスペースの「設定」メニューから「インテグレーション」を選択します。
-    -   「新しいインテグレーションを作成する」をクリックします。
-    -   インテグレーションに名前を付け（例: `Notifier App Dev Integration`）、関連付けるワークスペースを選択します。
-    -   「機能」セクションで、少なくとも「コンテンツの読み取り権限」を付与してください。将来的には、より詳細な権限設定が必要になる場合があります。
-    -   「送信」をクリックしてインテグレーションを作成します。
-2.  **インテグレーションシークレットの取得**:
-    -   作成されたインテグレーションの詳細ページで、「シークレット」セクションにある「**内部インテグレーションシークレット**」をコピーします。これは `secret_` で始まる長い文字列です。
-    -   **このシークレットは機密情報です。安全な場所に保管し、Git リポジトリなどには絶対にコミットしないでください。**
-3.  **対象データベースへのインテグレーション接続**:
-    -   通知のトリガーとしたい Notion データベースを開きます。
-    -   データベース右上の「•••」メニュー（または共有メニュー）から「接続の追加」を選択します。
-    -   検索窓で、さきほど作成したインテグレーション名を入力し、表示されたインテグレーションを選択して接続を許可します。
-    -   データベースの情報を読み取るために、インテグレーションに少なくとも「読み取り権限」を与えてください。
-
+(既存の内容のまま)
 ### 3.2. Google Cloud Firestore
 
-テンプレート情報と送信先情報を永続化するために、Google Cloud Firestore を使用します。
+(既存の内容のまま。サービスアカウントキーの作成と配置はFirebase Admin SDKの初期化に必要)
+### 3.3. Firebase Authentication
 
-1.  **Google Cloud プロジェクトの作成**:
-    -   [Google Cloud Console](https://console.cloud.google.com/) で新しいプロジェクトを作成するか、既存のプロジェクトを使用します。
-2.  **Firestore の有効化**:
-    -   選択したプロジェクトで、ナビゲーションメニューから「データベース」>「Firestore」を選択します。
-    -   「データベースを作成」をクリックします。
-    -   「**ネイティブモード**」を選択します。
-    -   **エディション**: 「Standard Edition」を選択します。
-    -   **場所 (ロケーションタイプとリージョン)**: 「リージョン」を選択し、任意のリージョン（例: `asia-northeast1` (東京) または `asia-northeast2` (大阪)）を選択します。
-    -   **セキュリティルール**: 初期設定として「**限定的**」（テストモードではない方）を選択します。
-    -   「データベースを作成」をクリックして完了します。
-3.  **サービスアカウントキーの作成と配置**:
-    -   Google Cloud Console の「IAM と管理」>「サービスアカウント」ページに移動します。
-    -   新しいサービスアカウントを作成するか、既存のサービスアカウントを使用します。
-        -   新しいサービスアカウントを作成する場合、任意のサービスアカウント名（例: `notifier-firestore-accessor`）を設定します。
-        -   作成したサービスアカウントに「**Cloud Datastore ユーザー**」ロール（Firestore の読み書き権限が含まれます）を割り当てます。
-    -   該当のサービスアカウントの詳細画面から「キー」タブを選択し、「キーを追加」>「新しいキーを作成」を選びます。
-    -   キーのタイプとして「**JSON**」を選択し、「作成」をクリックすると、キーファイルがダウンロードされます。
-    -   ダウンロードした JSON キーファイルを、プロジェクトのルートディレクトリに `.gcloud` という名前のフォルダを作成し、その中に `service-account-key.json` という名前で保存します (パス: `notifier/.gcloud/service-account-key.json`)。
-    -   **この JSON キーファイルおよび `.gcloud` フォルダは、必ず `.gitignore` に追加し、Git リポジトリにコミットしないでください。**
+ユーザー認証機能のために、Firebase Authentication を設定します。
 
-### 3.3. 環境変数ファイル (`.env`) の作成
+1.  **Firebase プロジェクトへのアクセス**:
+    -   Notifierアプリで使用しているGoogle Cloud プロジェクトが、Firebaseプロジェクトとしても連携されていることを確認します。（通常、Google CloudプロジェクトをFirebaseに追加することで連携できます。）
+    -   [Firebase Console](https://console.firebase.google.com/) を開き、対象のプロジェクトを選択します。
+2.  **Authentication の有効化**:
+    -   左側のナビゲーションメニューから「構築」>「Authentication」を選択します。
+    -   「始める」ボタンをクリックします。
+    -   「ログイン方法」タブで、「メール/パスワード」プロバイダを選択し、「有効にする」トグルをオンにして保存します。
+
+### 3.4. Firebase CLI のセットアップ (Dev Container 内)
+
+Firebase Emulator Suite を利用するために、Dev Container 内に Firebase CLI をインストールし、ログインします。
+
+1.  **Dev Container への Firebase CLI インストール**:
+    -   Notifier プロジェクトを VSCode で開き、Dev Container に接続します。
+    -   Dev Container のターミナルで、Firebase CLI がインストールされていない場合はインストールします。
+        -   `devcontainer.json` の `features` に Node.js (`ghcr.io/devcontainers/features/node:1`) が設定されていることを確認し、コンテナをリビルド後、以下のコマンドでインストールするのが推奨です（rosetta errorを避けるため）。
+            ```bash
+            npm install -g firebase-tools
+            ```
+        -   インストール後、`firebase --version` でバージョンが表示されることを確認します。
+2.  **Firebase へのログイン**:
+    -   Dev Container のターミナルで `firebase login` を実行します。
+    -   表示される認証URLをホストマシンのブラウザで開き、ログインを完了させます。
+    -   ブラウザに表示された認証コードをターミナルに貼り付けます。
+
+### 3.5. 環境変数ファイル (`.env`) の作成 (既存の内容をベースに、エミュレータ関連の記述について触れる)
 
 プロジェクトのルートディレクトリに `.env` という名前のファイルを作成し、以下の情報を記述します。
 
 ```env
-
 # .env ファイルの例
 
 NOTION_INTEGRATION_TOKEN="secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
 # GOOGLE_APPLICATION_CREDENTIALS は docker-compose.yml で直接設定するため、ここには不要です。
+# FIREBASE_AUTH_EMULATOR_HOST や FIRESTORE_EMULATOR_HOST も、
+# 開発環境では docker-compose.yml で設定するため、通常 .env には記述不要です。
 
 # PORT=3000 # 必要に応じてアプリケーションのポート番号を指定 (デフォルトは 3000)
-
 ```
 
 -   `NOTION_INTEGRATION_TOKEN`: 手順 3.1 で取得した Notion の内部インテグレーションシークレットをここに貼り付けてください。
 -   **注意**: `.env` ファイルは `.gitignore` に追加し、Git リポジトリにコミットしないでください。
 
-## 4. アプリケーションの起動 (開発環境)
+## 4. アプリケーションの起動 と Firebase Emulator Suite の利用 (開発環境)
 
-上記の設定が完了したら、アプリケーションを起動できます。
+上記の設定が完了したら、アプリケーションと Firebase Emulator Suite を起動できます。
 
-### 4.1. VSCode Dev Containers を使用する場合 (推奨)
+### 4.1. Firebase Emulator Suite のセットアップと起動 (Dev Container 内)
 
-1.  VSCode で `notifier` プロジェクトを開きます。
-2.  「Dev Containers」拡張機能がインストールされていることを確認してください。
-3.  VSCode のコマンドパレット (macOS: `Cmd+Shift+P`, Windows/Linux: `Ctrl+Shift+P`) を開きます。
-4.  「**Dev Containers: Rebuild and Reopen in Container**」または「**Dev Containers: Reopen in Container**」を選択します。
-    -   初回起動時や設定ファイル（`.devcontainer/devcontainer.json`, `docker-compose.yml` など）を変更した場合は、「Rebuild and Reopen in Container」を選択してコンテナを再構築することを推奨します。
-5.  コンテナがビルドされ、VSCode がコンテナに接続されると、VSCode 内のターミナルが自動的に開くか、手動で開くことができます。
-6.  VSCode 内のターミナルで、以下のコマンドを実行して開発サーバーを起動します。
+開発時には、Firebase Authentication や Firestore の動作をローカルでエミュレートするために Firebase Emulator Suite を使用します。
+
+1.  **エミュレータの初期化**:
+    -   Dev Container のターミナルで、プロジェクトのルートディレクトリ (`/usr/src/app`) にて以下を実行します。
+        ```bash
+        firebase init emulators
+        ```
+    -   プロンプトに従い、使用するエミュレータとして「Authentication Emulator」と「Firestore Emulator」を選択し、それぞれのポート（例: Auth: 9099, Firestore: 8080）、および Emulator UI のポート（例: 4000）を設定します。
+2.  **`firebase.json` の確認**:
+    -   プロジェクトルートに生成/更新された `firebase.json` に、以下のようなエミュレータ設定が記述されていることを確認します。
+        ```json
+        {
+          "emulators": {
+            "auth": { "port": 9099 },
+            "firestore": { "port": 8080 },
+            "ui": { "enabled": true, "port": 4000 },
+            "singleProjectMode": true
+          }
+        }
+        ```
+3.  **Dev Container のポートフォワーディング**:
+    -   `.devcontainer/devcontainer.json` の `forwardPorts` 配列に、Notifierアプリのポート(`3000`)に加えて、Emulator UI (`4000`)、Auth Emulator (`9099`)、Firestore Emulator (`8080`) のポートを追加します。
+        ```json
+        // .devcontainer/devcontainer.json の例
+        {
+          // ...
+          "forwardPorts": [3000, 4000, 9099, 8080],
+          // ...
+        }
+        ```
+    -   このファイルを変更した場合、VSCode のコマンドパレットから「Dev Containers: Rebuild Container」を実行してコンテナを再構築します。
+4.  **Admin SDK のエミュレータ接続設定**:
+    -   `docker-compose.yml` の `app` サービスの `environment` セクションに、Admin SDKがローカルエミュレータに接続するための環境変数を設定します。
+        ```yaml
+        # docker-compose.yml の app: services: environment:
+        environment:
+          - GOOGLE_APPLICATION_CREDENTIALS=/usr/src/app/service-account-key.json
+          - NODE_ENV=development
+          - FIREBASE_AUTH_EMULATOR_HOST=localhost:9099
+          - FIRESTORE_EMULATOR_HOST=localhost:8080
+        ```
+5.  **エミュレータの起動**:
+    -   Dev Container のターミナルで、プロジェクトルートにて以下を実行します。
+        ```bash
+        firebase emulators:start
+        ```
+    -   「All emulators ready!」と表示されれば起動成功です。Emulator UI は `http://localhost:4000` でアクセスできます（ポートフォワーディング設定後）。
+6.  **テストユーザーの作成**:
+    -   ホストマシンのブラウザから Emulator UI (`http://localhost:4000`) にアクセスし、「Authentication」タブでテスト用のメールアドレスとパスワードでユーザーを作成します。
+7.  **IDトークンの取得 (テスト用)**:
+    -   テストユーザーでログインし、IDトークンを取得するためのクライアント（例: `notifier/scripts/getIdToken.mjs` などのNode.jsスクリプト、または簡単なHTML/JSページ）を準備・実行します。
+    -   Node.jsスクリプトの場合、`firebaseConfig` を実際のプロジェクトの値に設定し、Dev Container内で実行してコンソールに出力されたIDトークンをコピーします。
+        ```bash
+        # 例: bun scripts/getIdToken.ts (または node scripts/getIdToken.mjs)
+        ```
+    - HTML/JSクライアントの場合、Dev Container内でHTTPサーバーを立てて（例: `emulator_test_client` フォルダで `npx serve -p 7000`）、フォワードされたポート（例: `http://localhost:7000`）にホストのブラウザからアクセスしてIDトークンを取得します。
+
+### 4.2. アプリケーションの起動 (VSCode Dev Containers を使用)
+
+1.  VSCode で `notifier` プロジェクトを開き、Dev Container に接続します。
+    -   （`forwardPorts` の変更などでコンテナをリビルドした場合は、その完了を待ちます。）
+2.  **Firebase Emulator Suite が起動していることを確認します (上記 4.1 の手順)。**
+3.  VSCode 内のターミナルで、以下のコマンドを実行して開発サーバーを起動します。
     ```bash
     bun run dev
     ```
-    `devcontainer.json` の `postCreateCommand` で `bun install` が設定されていれば、依存関係はコンテナビルド時に自動でインストールされます。
+    `devcontainer.json` の `postCreateCommand` で `bun install` や Firebase CLIのインストールが設定されていれば、依存関係はコンテナビルド/作成時に自動で処理されます。
 
-### 4.2. 直接 `docker-compose` を使用する場合
+### 4.3. 直接 `docker-compose` を使用する場合 (既存の内容をベースに、エミュレータとの連携について触れる)
 
 プロジェクトのルートディレクトリで、ターミナルから以下のコマンドを実行します。
 
@@ -112,19 +162,13 @@ NOTION_INTEGRATION_TOKEN="secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 docker-compose up --build
 ```
 
--   `--build` オプションは、初回起動時や `Dockerfile` に変更があった場合にイメージを再ビルドします。普段の起動は `docker-compose up` だけで十分です。
--   この方法で起動した場合、`docker-compose.yml` の `command: sh -c "bun install && bun run dev"` が実行され、依存関係のインストールと開発サーバーの起動が自動的に行われます。
+-   `--build` オプションは、初回起動時や `Dockerfile` に変更があった場合にイメージを再ビルドします。
+-   この方法で起動した場合、`docker-compose.yml` の `command` が実行されます。
+-   **注意**: この方法でアプリを起動する場合、Firebase Emulator Suite は別途 Dev Container 内またはホストマシンで `firebase emulators:start` コマンドを使って起動しておく必要があります。`docker-compose.yml` にエミュレータの起動は含まれていません。Admin SDKがエミュレータに接続するための環境変数は `docker-compose.yml` に設定済みです。
 
 ## 5. 動作確認
 
-アプリケーションが正常に起動すると、ターミナルに以下のようなログが表示されます。
+アプリケーションが正常に起動すると、ターミナルに「Notifier app is running on port 3000」などのログが表示されます。
+Firebase Emulator Suite も起動していれば、`http://localhost:4000` で Emulator UI にアクセスできます。
 
-```
-Notifier app is running on port 3000
-Persistence: Firestore (または InMemory)
-Started development server: http://localhost:3000
-```
-
-ブラウザで `http://localhost:3000/` (または `.env` で設定した `PORT`) にアクセスし、「Notifier App is running!」と表示されれば、アプリケーションの基本的な起動は成功です。
-
-API エンドポイントのテストや Webhook の受信テストは、[API エンドポイント仕様 (`docs/api_reference.md`)] や [Webhook 処理フロー解説 (`docs/webhook_processing_flow.md`)] を参照して行ってください。
+取得したIDトークンを `Authorization: Bearer <ID_TOKEN>` ヘッダーに含めて、保護されたAPIエンドポイント（例: `GET http://localhost:3000/api/v1/templates`）にリクエストを送信し、動作を確認してください。詳細は [API エンドポイント仕様 (`docs/api_reference.md`)] を参照してください。
