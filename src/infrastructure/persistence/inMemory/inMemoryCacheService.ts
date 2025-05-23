@@ -1,5 +1,5 @@
-// src/infrastructure/cache/inMemoryCacheService.ts (新規作成)
-import type { CacheService } from "../../application/services/cacheService"; // さっき定義したインターフェース
+// src/infrastructure/persistence/inMemory/inMemoryCacheService.ts
+import type { CacheService } from "../../../application/services/cacheService"; // CacheServiceインターフェースのパスを確認・調整してな
 
 interface CacheEntry<T> {
 	value: T;

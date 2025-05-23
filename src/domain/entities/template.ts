@@ -25,6 +25,7 @@ export class Template {
 	public body: string; // プレースホルダを含む本文
 	public conditions: TemplateCondition[]; // AND条件のリスト
 	public destinationId: string; // 送信先のID (Destinationエンティティと繋がる)
+	public readonly userId: string;
 	public createdAt: Date;
 	public updatedAt: Date;
 
@@ -35,6 +36,7 @@ export class Template {
 		body: string,
 		conditions: TemplateCondition[],
 		destinationId: string,
+		userId: string,
 		createdAt?: Date,
 		updatedAt?: Date,
 	) {
@@ -44,6 +46,7 @@ export class Template {
 		this.body = body;
 		this.conditions = conditions;
 		this.destinationId = destinationId;
+		this.userId = userId;
 		this.createdAt = createdAt || new Date();
 		this.updatedAt = updatedAt || new Date();
 

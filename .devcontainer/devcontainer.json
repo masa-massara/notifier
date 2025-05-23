@@ -14,11 +14,24 @@
 	"workspaceFolder": "/usr/src/app",
 
 	"features": {
-		// Gitをインストールするfeatureを追加
-		"ghcr.io/devcontainers/features/git:1": {}
-		// もし他にも必要なツールがあったら、ここに追加できるで
-		// 例: "ghcr.io/devcontainers/features/docker-in-docker:2": {} // コンテナ内でDockerコマンドを使いたい場合
-		// 例: "ghcr.io/devcontainers/features/node:1": {} // Node.jsも明示的に入れたい場合 (Bunと併用するならバージョン注意)
+		"ghcr.io/devcontainers/features/common-utils:2": {
+			"installCurl": true, // curlも入れとくと何かと便利
+			"installZsh": false,
+			"upgradePackages": true
+		},
+		"ghcr.io/devcontainers/features/node:1": {
+			// Node.js (npmも一緒に入る)
+			"version": "lts" // LTS版 (安定版) を指定
+		},
+		"ghcr.io/devcontainers/features/git:1": {},
+
+		"ghcr.io/devcontainers/features/java:1": {
+			"version": "17", // Firestoreエミュレータは比較的新しいJavaを要求することがあるので、11か17あたりが無難
+			"installMaven": "false", // Mavenは今回は不要やろ
+			"installGradle": "false" // Gradleも今回は不要やろ
+		}
+		// Bun自体もFeatureで管理されてるなら、ここに定義があるはずや
+		// もしBunがDockerfileで直接インストールされてるなら、そのままでOK
 	},
 
 	// VSCode内で使う拡張機能を指定する
@@ -39,7 +52,7 @@
 
 	// ↓↓↓ コンテナが作成された後に実行するコマンドを追加 ↓↓↓
 	// これで、コンテナ起動時に自動で依存関係をインストールしてくれる
-	"postCreateCommand": "bun install"
+	"postCreateCommand": "bun install && bun i -g firebase-tools"
 
 	// 下のコメントアウトされてるやつは、必要になったら設定する感じでええと思うわ
 	// "features": {},

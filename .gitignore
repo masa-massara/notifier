@@ -3,3 +3,6 @@ node_modules/
 service-account-key.json
 .gcloud/service-account-key.json
 .env
+scripts/
+firebase-debug.log
+firestore-debug.log

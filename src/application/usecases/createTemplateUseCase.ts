@@ -13,6 +13,7 @@ export interface CreateTemplateInput {
 	body: string;
 	conditions: TemplateCondition[]; // Templateエンティティで定義した型を使う
 	destinationId: string;
+	userId: string; // ★★★ Input DTOにuserIdを追加 ★★★
 }
 
 // ユースケースが出力するデータのための型 (DTO) - 作成されたテンプレートを返す場合
@@ -23,6 +24,7 @@ export interface CreateTemplateOutput {
 	body: string;
 	conditions: TemplateCondition[];
 	destinationId: string;
+	userId: string; // ★★★ Output DTOにuserIdを追加 ★★★
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -43,6 +45,7 @@ export class CreateTemplateUseCase {
 			input.body,
 			input.conditions,
 			input.destinationId,
+			input.userId, // ★★★ エンティティ生成時にuserIdを渡す ★★★
 			// createdAt と updatedAt はエンティティのコンストラクタでデフォルト値が設定される
 		);
 
@@ -57,6 +60,7 @@ export class CreateTemplateUseCase {
 			body: newTemplate.body,
 			conditions: newTemplate.conditions,
 			destinationId: newTemplate.destinationId,
+			userId: newTemplate.userId, // ★★★ OutputにもuserIdを含める ★★★
 			createdAt: newTemplate.createdAt,
 			updatedAt: newTemplate.updatedAt,
 		};

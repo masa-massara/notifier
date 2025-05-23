@@ -5,6 +5,8 @@ Notifier App は、Notion データベース内のページの変更をトリガ
 ## 主な機能
 
 -   Notion データベースの変更（ページの新規作成、プロパティ更新など）をトリガーに通知
+-   **ユーザー認証機能**: Firebase Authentication を利用してAPIエンドポイントを保護し、ユーザーごとのリソース管理を実現。
+-   **ユーザーごとのリソース管理**: 通知テンプレートや送信先情報をユーザー単位で作成・管理可能。
 -   ユーザーが定義可能な通知テンプレート（条件、メッセージ本文、送信先を指定）
 -   複数のチャットサービスへの対応 (汎用的な Webhook URL を利用)
 -   Notion データベースのスキーマ情報を利用した、柔軟な条件設定とメッセージ整形
@@ -14,9 +16,10 @@ Notifier App は、Notion データベース内のページの変更をトリガ
 
 -   **バックエンド**: Bun, Hono, TypeScript
 -   **データベース**: Google Cloud Firestore
+-   **認証**: Firebase Authentication
 -   **キャッシュ**: インメモリキャッシュ (将来的には Redis 等も検討)
 -   **外部連携**: Notion API, 各チャットツールの Webhook
--   **開発環境**: Docker, VSCode Dev Containers
+-   **開発環境**: Docker, VSCode Dev Containers, Firebase Emulator Suite
 
 ## セットアップと実行方法 (開発環境)
 
@@ -24,6 +27,8 @@ Notifier App は、Notion データベース内のページの変更をトリガ
 
 -   Docker Engine
 -   Docker Compose
+-   VSCode と Dev Containers 拡張機能 (推奨)
+-   Firebase CLI (Dev Container内で利用)
 
 ### 環境設定
 
@@ -34,12 +39,12 @@ Notifier App は、Notion データベース内のページの変更をトリガ
     NOTION_INTEGRATION_TOKEN="your_notion_integration_secret_here"
     # GOOGLE_APPLICATION_CREDENTIALS は docker-compose.yml 経由で設定されます
     # PORT=3000 # 必要であれば指定 (デフォルト3000)
+    # FIREBASE_AUTH_EMULATOR_HOST, FIRESTORE_EMULATOR_HOST も docker-compose.yml で設定します
     ```
 
     **注意**: `.env` ファイルは `.gitignore` に追加し、Git リポジトリにコミットしないでください。
 
 2.  **Google Cloud サービスアカウントキーの配置**:
-
     -   Google Cloud Platform (GCP) でプロジェクトを作成し、Firestore を有効化してください。
     -   IAM と管理からサービスアカウントを作成し、「Cloud Datastore ユーザー」ロールを割り当てます。
     -   そのサービスアカウントのキー（JSON 形式）をダウンロードします。
@@ -50,13 +55,21 @@ Notifier App は、Notion データベース内のページの変更をトリガ
     -   Notion で新しいインテグレーションを作成し、「内部インテグレーションシークレット」（これが`NOTION_INTEGRATION_TOKEN`になります）を取得してください。
     -   通知の対象としたい Notion データベースの「接続」設定で、作成したインテグレーションを追加し、必要な権限（最低でも読み取り権限）を与えてください。
 
+4.  **Firebase Authentication と Emulator Suite の設定**:
+    -   Firebase プロジェクトで Authentication を有効化し、「メール/パスワード」サインイン方法を有効にしてください。
+    -   開発時には Firebase Emulator Suite を利用して認証と Firestore をエミュレートします。Dev Container 内で `firebase init emulators` を実行し、Auth Emulator (例: port `9099`)、Firestore Emulator (例: port `8080`)、Emulator UI (例: port `4000`) を設定してください。
+    -   詳細は `docs/setup_detailed.md` を参照してください。
+
 ### アプリケーションの起動
 
 1.  **VSCode Dev Containers を使用する場合 (推奨)**:
-    -   VSCode でプロジェクトを開きます。
-    -   「Dev Containers」拡張機能がインストールされていることを確認してください。
-    -   コマンドパレット (Cmd/Ctrl + Shift + P) から「Dev Containers: Rebuild and Reopen in Container」または「Dev Containers: Reopen in Container」を選択します。
-    -   コンテナが起動し、VSCode がコンテナに接続されたら、VSCode 内のターミナルを開き、以下のコマンドを実行します。
+    -   VSCode でプロジェクトを開き、「Dev Containers: Rebuild and Reopen in Container」または「Dev Containers: Reopen in Container」を選択します。
+    -   コンテナが起動し、VSCode がコンテナに接続されたら、VSCode 内のターミナルを開きます。
+    -   **Firebase Emulator Suite の起動**: 別のターミナル（または同じターミナルの別タブ/ペイン）で、プロジェクトルートにて以下を実行します。
+        ```bash
+        firebase emulators:start
+        ```
+    -   **開発サーバーの起動**: メインのターミナルで以下を実行します。
         ```bash
         bun run dev
         ```
@@ -65,10 +78,13 @@ Notifier App は、Notion データベース内のページの変更をトリガ
     ```bash
     docker-compose up --build
     ```
+    -   **注意**: この方法でアプリを起動する場合、Firebase Emulator Suite は別途 Dev Container 内またはホストマシンで `firebase emulators:start` コマンドを使って起動しておく必要があります。
 
 ### 動作確認
 
 -   ブラウザで `http://localhost:3000/` (または `.env` で設定した `PORT`) にアクセスし、「Notifier App is running!」と表示されれば起動成功です。
+-   Firebase Emulator UI (`http://localhost:4000` など) にアクセスして、エミュレータの動作状況を確認できます。
+-   APIエンドポイントをテストする際は、認証が必要なエンドポイントにはFirebase IDトークンを `Authorization: Bearer <ID_TOKEN>` ヘッダーに含めてリクエストしてください。IDトークンの取得方法については `docs/setup_detailed.md` を参照してください。
 -   API エンドポイントの詳細は `docs/api_reference.md` を参照してください。
 
 ## 詳細ドキュメント

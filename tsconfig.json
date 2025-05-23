@@ -3,6 +3,9 @@
 		"strict": true,
 		"jsx": "react-jsx",
 		"jsxImportSource": "hono/jsx",
-		"downlevelIteration": true
+		"downlevelIteration": true,
+		"module": "ESNext", // または "NodeNext"
+		"moduleResolution": "bundler", // または "Bundler"
+		"target": "ESNext"
 	}
 }

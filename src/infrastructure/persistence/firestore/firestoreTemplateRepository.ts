@@ -1,39 +1,25 @@
 // src/infrastructure/persistence/firestore/firestoreTemplateRepository.ts
 import { Template } from "../../../domain/entities/template";
 import type { TemplateRepository } from "../../../domain/repositories/templateRepository";
-import { initializeApp, cert, getApps, App } from "firebase-admin/app"; // App 型もインポート
+// initializeApp, cert, getApps は main.ts で一元管理するのでここでは不要
 import {
 	getFirestore,
 	type Firestore,
 	type QueryDocumentSnapshot,
-} from "firebase-admin/firestore"; // Firestore 型もインポート
+} from "firebase-admin/firestore";
 
 // Firestoreのコレクション名
 const TEMPLATES_COLLECTION = "templates";
 
 export class FirestoreTemplateRepository implements TemplateRepository {
-	private db: Firestore; //型を Firestore に
+	private db: Firestore;
 
 	constructor() {
-		// getApps() を使って初期化済みか確認
-		if (!getApps().length) {
-			// admin.apps.length の代わりに getApps().length を使う
-			const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-			if (!serviceAccountPath) {
-				throw new Error(
-					"GOOGLE_APPLICATION_CREDENTIALS environment variable is not set.",
-				);
-			}
-			initializeApp({
-				// admin.initializeApp の代わりに initializeApp を使う
-				credential: cert(serviceAccountPath), // admin.credential.cert の代わりに cert を使う
-			});
-			console.log(
-				"Firebase Admin SDK initialized by FirestoreTemplateRepository.",
-			);
-		}
-		this.db = getFirestore(); // admin.firestore() の代わりに getFirestore() を使う
-		console.log("FirestoreTemplateRepository instance created.");
+		// Firebase Admin SDKの初期化はmain.tsで行うため、ここでは呼び出さない
+		this.db = getFirestore();
+		console.log(
+			"FirestoreTemplateRepository instance created, using centrally initialized Firebase Admin SDK.",
+		);
 	}
 
 	async save(template: Template): Promise<void> {
@@ -45,26 +31,41 @@ export class FirestoreTemplateRepository implements TemplateRepository {
 			body: template.body,
 			conditions: template.conditions,
 			destinationId: template.destinationId,
-			createdAt: template.createdAt, // FirestoreはDateをTimestamp型に自動変換する
+			userId: template.userId,
+			createdAt: template.createdAt,
 			updatedAt: template.updatedAt,
 		});
-		console.log(`Template saved to Firestore with ID: ${template.id}`);
+		console.log(
+			`Template saved to Firestore with ID: ${template.id} for user ${template.userId}`,
+		);
 	}
 
-	async findById(id: string): Promise<Template | null> {
-		console.log(`Firestore: Attempting to find template with ID: ${id}`); // ログ追加
+	async findById(id: string, userId: string): Promise<Template | null> {
+		console.log(
+			`Firestore: Attempting to find template with ID: ${id} for user ${userId}`,
+		);
 		const docRef = this.db.collection(TEMPLATES_COLLECTION).doc(id);
 		const docSnap = await docRef.get();
 
 		if (!docSnap.exists) {
-			console.log(`Firestore: Template with ID: ${id} not found.`); // ログ追加
+			console.log(`Firestore: Template with ID: ${id} not found.`);
 			return null;
 		}
 
 		const data = docSnap.data();
-		console.log(`Firestore: Found data for ID ${id}:`, data); // 取得したデータもログに出してみる
 		if (!data) return null;
 
+		if (data.userId !== userId) {
+			console.warn(
+				`Firestore: Template with ID: ${id} found, but does not belong to user ${userId}.`,
+			);
+			return null;
+		}
+
+		console.log(
+			`Firestore: Found data for ID ${id} owned by user ${userId}:`,
+			data,
+		);
 		return new Template(
 			data.id,
 			data.name,
@@ -72,6 +73,7 @@ export class FirestoreTemplateRepository implements TemplateRepository {
 			data.body,
 			data.conditions,
 			data.destinationId,
+			data.userId,
 			data.createdAt.toDate
 				? data.createdAt.toDate()
 				: new Date(data.createdAt),
@@ -81,10 +83,17 @@ export class FirestoreTemplateRepository implements TemplateRepository {
 		);
 	}
 
-	async findByNotionDatabaseId(notionDatabaseId: string): Promise<Template[]> {
+	async findByNotionDatabaseId(
+		notionDatabaseId: string,
+		userId: string,
+	): Promise<Template[]> {
+		console.log(
+			`Firestore: Finding templates by notionDatabaseId: ${notionDatabaseId} for user ${userId}`,
+		);
 		const snapshot = await this.db
 			.collection(TEMPLATES_COLLECTION)
 			.where("notionDatabaseId", "==", notionDatabaseId)
+			.where("userId", "==", userId)
 			.get();
 
 		if (snapshot.empty) {
@@ -100,6 +109,7 @@ export class FirestoreTemplateRepository implements TemplateRepository {
 				data.body,
 				data.conditions,
 				data.destinationId,
+				data.userId,
 				data.createdAt.toDate
 					? data.createdAt.toDate()
 					: new Date(data.createdAt),
@@ -110,49 +120,152 @@ export class FirestoreTemplateRepository implements TemplateRepository {
 		});
 	}
 
-	async deleteById(id: string): Promise<void> {
-		await this.db.collection(TEMPLATES_COLLECTION).doc(id).delete();
-		console.log(`Template with ID: ${id} deleted from Firestore.`);
+	// ★★★ 新しいメソッドの実装を追加 ★★★
+	async findAllByNotionDatabaseId(
+		notionDatabaseId: string,
+	): Promise<Template[]> {
+		console.log(
+			`Firestore: Finding all templates by notionDatabaseId: ${notionDatabaseId} (regardless of user)`,
+		);
+		const snapshot = await this.db
+			.collection(TEMPLATES_COLLECTION)
+			.where("notionDatabaseId", "==", notionDatabaseId) // notionDatabaseIdのみでフィルタリング
+			.get();
+
+		if (snapshot.empty) {
+			console.log(
+				`Firestore: No templates found for notionDatabaseId: ${notionDatabaseId}.`,
+			);
+			return [];
+		}
+
+		console.log(
+			`Firestore: Found ${snapshot.docs.length} template documents for notionDatabaseId: ${notionDatabaseId}. Starting mapping...`,
+		);
+		const templates: Template[] = [];
+		for (const doc of snapshot.docs) {
+			const data = doc.data();
+			try {
+				// Webhook処理では、取得したテンプレートのuserIdも重要になるので、正しくマッピングする
+				if (!data.userId) {
+					console.warn(
+						`Firestore: Document ID ${doc.id} is missing userId. Skipping.`,
+					);
+					continue;
+				}
+				const template = new Template(
+					data.id as string,
+					data.name as string,
+					data.notionDatabaseId as string,
+					data.body as string,
+					// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+					data.conditions as any,
+					data.destinationId as string,
+					data.userId as string, // userIdをマッピング
+					data.createdAt?.toDate
+						? data.createdAt.toDate()
+						: new Date(data.createdAt),
+					data.updatedAt?.toDate
+						? data.updatedAt.toDate()
+						: new Date(data.updatedAt),
+				);
+				templates.push(template);
+			} catch (error) {
+				console.error(
+					`Firestore: Error mapping document ID: ${doc.id}, Data:`,
+					JSON.stringify(data, null, 2),
+					"Error:",
+					error,
+				);
+			}
+		}
+		console.log(
+			`Firestore: Finished mapping. Total mapped templates for notionDatabaseId ${notionDatabaseId}: ${templates.length}`,
+		);
+		return templates;
+	}
+	// ★★★ ここまで追加 ★★★
+
+	async deleteById(id: string, userId: string): Promise<void> {
+		console.log(
+			`Firestore: Attempting to delete template with ID: ${id} for user ${userId}`,
+		);
+		const docRef = this.db.collection(TEMPLATES_COLLECTION).doc(id);
+		const docSnap = await docRef.get();
+
+		if (!docSnap.exists) {
+			console.warn(
+				`Firestore: Template with ID: ${id} not found. Cannot delete.`,
+			);
+			return;
+		}
+
+		const data = docSnap.data();
+		if (!data || data.userId !== userId) {
+			console.warn(
+				`Firestore: Template with ID: ${id} does not belong to user ${userId}. Cannot delete.`,
+			);
+			return;
+		}
+
+		await docRef.delete();
+		console.log(
+			`Template with ID: ${id} for user ${userId} deleted from Firestore.`,
+		);
 	}
 
-	async findAll(): Promise<Template[]> {
-		console.log('Firestore: Attempting to find all templates...');
-		const snapshot = await this.db.collection(TEMPLATES_COLLECTION).get(); // ← .limit(1) は一旦外して、全件取得に戻してみる
-	  
+	async findAll(userId: string): Promise<Template[]> {
+		console.log(
+			`Firestore: Attempting to find all templates for user ${userId}...`,
+		);
+		const snapshot = await this.db
+			.collection(TEMPLATES_COLLECTION)
+			.where("userId", "==", userId)
+			.get();
+
 		if (snapshot.empty) {
-		  console.log('Firestore: No templates found in collection.');
-		  return [];
-		}
-	  
-		console.log(`Firestore: Found ${snapshot.docs.length} template documents. Starting mapping...`);
-		const templates: Template[] = []; // ★★★ 一旦空の配列を用意
-		for (let i = 0; i < snapshot.docs.length; i++) { // ★★★ map の代わりに for ループを使ってみる
-		  const doc = snapshot.docs[i];
-		  const data = doc.data();
-		  console.log(`Firestore: Mapping document <span class="math-inline">\{i \+ 1\}/</span>{snapshot.docs.length}, ID: ${doc.id}`); // ★どのドキュメントを処理中かログ
-		  // console.log(`Firestore: Raw data for doc ID ${doc.id}:`, JSON.stringify(data, null, 2)); // ★必要なら生データもログ出し
-	  
-		  try {
-			const template = new Template(
-			  data.id as string,
-			  data.name as string,
-			  data.notionDatabaseId as string,
-			  data.body as string,
-			  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-			  data.conditions as any,
-			  data.destinationId as string,
-			  data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt), // ?. を使って toDate がなくてもエラーにならないように
-			  data.updatedAt?.toDate ? data.updatedAt.toDate() : new Date(data.updatedAt)  // 同上
+			console.log(
+				`Firestore: No templates found in collection for user ${userId}.`,
 			);
-			templates.push(template); // ★成功したら配列に追加
-			// console.log(`Firestore: Successfully mapped document ID: ${doc.id}`); // ★成功ログ
-		  } catch (error) {
-			console.error(`Firestore: Error mapping document ID: ${doc.id}, Data:`, JSON.stringify(data, null, 2), 'Error:', error); // ★エラーになったドキュメントのデータとエラー内容をログ出し
-			// エラーになったデータはスキップするか、あるいはここで処理を中断するかは設計次第
-			// 今回はスキップして、他の正常なデータは返すようにしてみる
-		  }
+			return [];
 		}
-		console.log(`Firestore: Finished mapping. Total mapped templates: ${templates.length}`);
+
+		console.log(
+			`Firestore: Found ${snapshot.docs.length} template documents for user ${userId}. Starting mapping...`,
+		);
+		const templates: Template[] = [];
+		for (const doc of snapshot.docs) {
+			const data = doc.data();
+			try {
+				const template = new Template(
+					data.id as string,
+					data.name as string,
+					data.notionDatabaseId as string,
+					data.body as string,
+					// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+					data.conditions as any,
+					data.destinationId as string,
+					data.userId as string,
+					data.createdAt?.toDate
+						? data.createdAt.toDate()
+						: new Date(data.createdAt),
+					data.updatedAt?.toDate
+						? data.updatedAt.toDate()
+						: new Date(data.updatedAt),
+				);
+				templates.push(template);
+			} catch (error) {
+				console.error(
+					`Firestore: Error mapping document ID: ${doc.id}, Data:`,
+					JSON.stringify(data, null, 2),
+					"Error:",
+					error,
+				);
+			}
+		}
+		console.log(
+			`Firestore: Finished mapping. Total mapped templates for user ${userId}: ${templates.length}`,
+		);
 		return templates;
-	  }
+	}
 }

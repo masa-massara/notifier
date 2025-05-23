@@ -1,13 +1,16 @@
 // src/main.ts
 import { Hono } from "hono";
 
+// Firebase Admin SDK関連のimport
+import { initializeApp, cert, getApps } from "firebase-admin/app";
+
 // --- Domain層のインポート ---
 import type { TemplateRepository } from "./domain/repositories/templateRepository";
 import type { DestinationRepository } from "./domain/repositories/destinationRepository";
 import type { NotionApiService } from "./domain/services/notionApiService";
 import type { CacheService } from "./application/services/cacheService";
 import type { MessageFormatterService } from "./domain/services/messageFormatterService";
-import type { NotificationClient } from "./domain/services/notificationClient"; // NotificationClientインターフェース
+import type { NotificationClient } from "./domain/services/notificationClient";
 
 // --- Application層 (UseCases & Services) のインポート ---
 import { CreateTemplateUseCase } from "./application/usecases/createTemplateUseCase";
@@ -31,8 +34,8 @@ import { FirestoreTemplateRepository } from "./infrastructure/persistence/firest
 // import { InMemoryDestinationRepository } from "./infrastructure/persistence/inMemory/inMemoryDestinationRepository";
 import { FirestoreDestinationRepository } from "./infrastructure/persistence/firestore/firestoreDestinationRepository";
 import { NotionApiClient } from "./infrastructure/web-clients/notionApiClient";
-import { InMemoryCacheService } from "./infrastructure/cache/inMemoryCacheService";
-import { HttpNotificationClient } from "./infrastructure/web-clients/httpNotificationClient"; // HttpNotificationClient実装
+import { InMemoryCacheService } from "./infrastructure/persistence/inMemory/inMemoryCacheService";
+import { HttpNotificationClient } from "./infrastructure/web-clients/httpNotificationClient";
 
 // --- Presentation層 (Handlers) のインポート ---
 import {
@@ -51,31 +54,50 @@ import {
 } from "./presentation/handlers/destinationHandler";
 import { notionWebhookHandlerFactory } from "./presentation/handlers/notionWebhookHandler";
 
+// ★★★ 認証ミドルウェアをインポート ★★★
+import { authMiddleware } from "./presentation/middleware/authMiddleware"; // パスは実際の場所に合わせてな
+
 const app = new Hono();
 
-// --- DIのセットアップ ---
+// --- 定数定義 ---
 const USE_FIRESTORE_DB = true;
 
-const notionIntegrationToken = process.env.NOTION_INTEGRATION_TOKEN;
-const googleAppCredentials = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+// --- Firebase Admin SDK の初期化 ---
+if (USE_FIRESTORE_DB && process.env.NODE_ENV !== "test") {
+	if (!getApps().length) {
+		const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+		if (!serviceAccountPath) {
+			const errorMessage =
+				"FATAL ERROR: GOOGLE_APPLICATION_CREDENTIALS environment variable is not set, but Firestore is configured and Firebase is not initialized.";
+			console.error(errorMessage);
+			throw new Error(errorMessage);
+		}
+		try {
+			initializeApp({
+				credential: cert(serviceAccountPath),
+			});
+			console.log("Firebase Admin SDK initialized centrally in main.ts.");
+		} catch (e: unknown) {
+			// より汎用的なエラーキャッチ
+			const errorMessage = e instanceof Error ? e.message : String(e);
+			console.error("Failed to initialize Firebase Admin SDK:", errorMessage);
+			throw new Error(
+				`Firebase Admin SDK initialization failed: ${errorMessage}`,
+			);
+		}
+	}
+}
 
+// --- 環境変数のチェック ---
+const notionIntegrationToken = process.env.NOTION_INTEGRATION_TOKEN;
 if (!notionIntegrationToken) {
 	const errorMessage =
 		"FATAL ERROR: NOTION_INTEGRATION_TOKEN environment variable is not set.";
 	console.error(errorMessage);
 	throw new Error(errorMessage);
 }
-if (
-	USE_FIRESTORE_DB &&
-	!googleAppCredentials &&
-	process.env.NODE_ENV !== "test"
-) {
-	const errorMessage =
-		"FATAL ERROR: GOOGLE_APPLICATION_CREDENTIALS environment variable is not set, but USE_FIRESTORE_DB is true.";
-	console.error(errorMessage);
-	throw new Error(errorMessage);
-}
 
+// --- DIのセットアップ ---
 let templateRepository: TemplateRepository;
 let destinationRepository: DestinationRepository;
 const cacheService: CacheService = new InMemoryCacheService();
@@ -85,7 +107,7 @@ const notionApiService: NotionApiService = new NotionApiClient(
 );
 const messageFormatterService: MessageFormatterService =
 	new MessageFormatterServiceImpl();
-const notificationClient: NotificationClient = new HttpNotificationClient(); // NotificationClientのインスタンス作成
+const notificationClient: NotificationClient = new HttpNotificationClient();
 
 let persistenceTypeMessage: string;
 
@@ -95,13 +117,12 @@ if (USE_FIRESTORE_DB) {
 	persistenceTypeMessage = "Persistence: Firestore";
 } else {
 	templateRepository = new InMemoryTemplateRepository();
-	// destinationRepository = new InMemoryDestinationRepository(); // 実装するなら
 	throw new Error(
-		"InMemoryDestinationRepository is not implemented for this fallback scenario.",
+		"InMemoryDestinationRepository is not implemented for this fallback scenario, or USE_FIRESTORE_DB is unexpectedly false.",
 	);
-	// persistenceTypeMessage = "Persistence: InMemory";
 }
 
+// --- ユースケースのインスタンス化 ---
 const createTemplateUseCase = new CreateTemplateUseCase(templateRepository);
 const getTemplateUseCase = new GetTemplateUseCase(templateRepository);
 const listTemplatesUseCase = new ListTemplatesUseCase(templateRepository);
@@ -127,12 +148,16 @@ const processNotionWebhookUseCase = new ProcessNotionWebhookUseCase(
 	destinationRepository,
 	notionApiService,
 	messageFormatterService,
-	notificationClient, // NotificationClientを注入！
+	notificationClient,
 );
 
 // --- ルーティング定義 ---
 const apiV1 = new Hono();
 
+// ★★★ /api/v1 のルートグループ全体に認証ミドルウェアを適用 ★★★
+apiV1.use("*", authMiddleware);
+
+// Template API
 apiV1.post("/templates", createTemplateHandlerFactory(createTemplateUseCase));
 apiV1.get("/templates/:id", getTemplateByIdHandlerFactory(getTemplateUseCase));
 apiV1.get("/templates", listTemplatesHandlerFactory(listTemplatesUseCase));
@@ -145,6 +170,7 @@ apiV1.delete(
 	deleteTemplateHandlerFactory(deleteTemplateUseCase),
 );
 
+// Destination API
 apiV1.post(
 	"/destinations",
 	createDestinationHandlerFactory(createDestinationUseCase),
@@ -168,11 +194,13 @@ apiV1.delete(
 
 app.route("/api/v1", apiV1);
 
+// Webhook Endpoint (認証ミドルウェアの対象外)
 app.post(
 	"/webhooks/notion",
 	notionWebhookHandlerFactory(processNotionWebhookUseCase),
 );
 
+// Root Endpoint (認証不要)
 app.get("/", (c) => c.text("Notifier App is running!"));
 
 export default {

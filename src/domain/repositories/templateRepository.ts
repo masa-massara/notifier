@@ -1,18 +1,26 @@
-import type { Template } from '../entities/template';
+// src/domain/repositories/templateRepository.ts
+import type { Template } from "../entities/template";
 
 export interface TemplateRepository {
-  // 新しいテンプレートを保存する、または既存のテンプレートを更新する
-  save(template: Template): Promise<void>;
+	save(template: Template): Promise<void>;
 
-  // IDを指定してテンプレートを1件取得する。見つからなければnullを返す
-  findById(id: string): Promise<Template | null>;
+	findById(id: string, userId: string): Promise<Template | null>;
 
-  // NotionのデータベースIDを指定して、関連するテンプレートを全て取得する
-  findByNotionDatabaseId(notionDatabaseId: string): Promise<Template[]>;
+	// 特定のユーザーが所有する、指定されたNotionデータベースIDのテンプレートを取得
+	findByNotionDatabaseId(
+		notionDatabaseId: string,
+		userId: string,
+	): Promise<Template[]>;
 
-  // IDを指定してテンプレートを削除する
-  deleteById(id: string): Promise<void>;
+	/**
+	 * 指定されたNotionのデータベースIDに一致する全てのテンプレートを取得する（ユーザーを問わない）。
+	 * 主にWebhook処理のように、特定のユーザーコンテキストなしに
+	 * 関連する全てのテンプレートを処理する必要がある場合に使用する。
+	 * @param notionDatabaseId NotionのデータベースID
+	 */
+	findAllByNotionDatabaseId(notionDatabaseId: string): Promise<Template[]>; // ★★★ この行を追加 ★★★
 
-  // （オプション）全てのテンプレートを取得する
-  findAll(): Promise<Template[]>;
+	deleteById(id: string, userId: string): Promise<void>;
+
+	findAll(userId: string): Promise<Template[]>;
 }

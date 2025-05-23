@@ -13,7 +13,7 @@ import type {
 	NotificationPayload,
 } from "../../domain/services/notificationClient";
 
-// NotionからのWebhookデータの型
+// NotionからのWebhookデータの型 (変更なし)
 // biome-ignore lint/suspicious/noExplicitAny: <explanation>
 type NotionPageProperties = Record<string, any>;
 export interface ProcessNotionWebhookInputData {
@@ -71,27 +71,14 @@ export class ProcessNotionWebhookUseCase {
 			);
 			return;
 		}
-		if (!pageProperties || Object.keys(pageProperties).length === 0) {
-			console.warn(
-				"ProcessNotionWebhookUseCase: pageProperties are missing or empty from webhook payload.",
-				JSON.stringify(pageProperties, null, 2),
-			);
-		}
+		// pagePropertiesのチェックは現状維持
 
 		console.log(
 			`ProcessNotionWebhookUseCase: Successfully extracted databaseId: ${databaseId}`,
 		);
-		if (pageProperties) {
-			console.log(
-				"ProcessNotionWebhookUseCase: Extracted pageProperties keys:",
-				Object.keys(pageProperties),
-			);
-		}
+		// pagePropertiesのログも現状維持
 
-		// 1. データベーススキーマを取得 (キャッシュ経由)
-		console.log(
-			`ProcessNotionWebhookUseCase: Calling getDatabaseSchema for databaseId: ${databaseId}`,
-		);
+		// 1. データベーススキーマを取得 (変更なし)
 		let databaseSchema: NotionDatabaseSchema | null = null;
 		try {
 			databaseSchema =
@@ -102,9 +89,6 @@ export class ProcessNotionWebhookUseCase {
 				);
 				return;
 			}
-			console.log(
-				"ProcessNotionWebhookUseCase: Successfully fetched database schema (potentially from cache).",
-			);
 		} catch (error) {
 			console.error(
 				`ProcessNotionWebhookUseCase: Error during getDatabaseSchema call for databaseId: ${databaseId}`,
@@ -115,10 +99,12 @@ export class ProcessNotionWebhookUseCase {
 
 		// 2. 該当データベースのテンプレートを取得
 		console.log(
-			`ProcessNotionWebhookUseCase: Fetching templates for databaseId: ${databaseId}`,
+			`ProcessNotionWebhookUseCase: Fetching all templates for databaseId: ${databaseId}`,
 		);
+		// ★★★ 修正点1: findAllByNotionDatabaseId (仮の新しいメソッド名) を使用 ★★★
+		// このメソッドは TemplateRepository インターフェースと実装に追加する必要があるで
 		const templates: Template[] =
-			await this.templateRepository.findByNotionDatabaseId(databaseId);
+			await this.templateRepository.findAllByNotionDatabaseId(databaseId);
 		console.log(
 			`ProcessNotionWebhookUseCase: Found ${templates.length} templates for databaseId: ${databaseId}`,
 		);
@@ -130,8 +116,7 @@ export class ProcessNotionWebhookUseCase {
 			return;
 		}
 
-		// 3. 条件に一致するテンプレートを特定
-		console.log("ProcessNotionWebhookUseCase: Starting template matching...");
+		// 3. 条件に一致するテンプレートを特定 (変更なし)
 		const matchedTemplates = findMatchingTemplates(
 			pageProperties || {},
 			templates,
@@ -144,25 +129,17 @@ export class ProcessNotionWebhookUseCase {
 			);
 			return;
 		}
-		console.log(
-			`ProcessNotionWebhookUseCase: Found ${matchedTemplates.length} matched templates.`,
-		);
-		for (const t of matchedTemplates) {
-			console.log(` - Matched Template ID: ${t.id}, Name: ${t.name}`);
-		}
+		// matchedTemplatesのログも現状維持
 
-		// 4. 条件に一致したテンプレートを使って通知メッセージを整形。
-		console.log("ProcessNotionWebhookUseCase: Starting message formatting...");
+		// 4. 条件に一致したテンプレートを使って通知メッセージを整形。(変更なし)
 		const messagesToSend: Array<{
 			destinationId: string;
+			templateUserId: string; // ★★★ マッチしたテンプレートの所有者userIdを保持 ★★★
 			body: string;
 			templateName: string;
 		}> = [];
 
 		for (const template of matchedTemplates) {
-			console.log(
-				`ProcessNotionWebhookUseCase: Formatting message for template ID: ${template.id}, Name: ${template.name}`,
-			);
 			try {
 				const formattedBody = await this.messageFormatterService.format(
 					template.body,
@@ -172,12 +149,10 @@ export class ProcessNotionWebhookUseCase {
 				);
 				messagesToSend.push({
 					destinationId: template.destinationId,
+					templateUserId: template.userId, // ★★★ templateからuserIdを取得して格納 ★★★
 					body: formattedBody,
 					templateName: template.name,
 				});
-				console.log(
-					`ProcessNotionWebhookUseCase: Formatted message for template "${template.name}":\n${formattedBody}`,
-				);
 			} catch (formatError) {
 				console.error(
 					`ProcessNotionWebhookUseCase: Error formatting message for template ID ${template.id}:`,
@@ -187,49 +162,38 @@ export class ProcessNotionWebhookUseCase {
 		}
 
 		if (messagesToSend.length === 0) {
-			console.log(
-				"ProcessNotionWebhookUseCase: No messages were formatted successfully. Nothing to send.",
-			);
+			// ログは現状維持
 			return;
 		}
-		console.log(
-			`ProcessNotionWebhookUseCase: Successfully formatted ${messagesToSend.length} messages.`,
-		);
+		// formatted messagesのログも現状維持
 
 		// 5. 整形後のメッセージを、該当テンプレートに紐づく送信先へ通知。
 		console.log(
 			"ProcessNotionWebhookUseCase: Starting to send notifications...",
 		);
 		for (const messageInfo of messagesToSend) {
-			console.log(
-				`ProcessNotionWebhookUseCase: Preparing to send message for template "${messageInfo.templateName}" to destination ID: ${messageInfo.destinationId}`,
-			);
 			try {
+				// ★★★ 修正点2: destinationRepository.findById に templateUserId を渡す ★★★
 				const destination = await this.destinationRepository.findById(
 					messageInfo.destinationId,
+					messageInfo.templateUserId, // 送信先は、テンプレートの所有者のものを取得
 				);
 				if (!destination || !destination.webhookUrl) {
 					console.error(
-						`ProcessNotionWebhookUseCase: Destination or Webhook URL not found for destination ID: ${messageInfo.destinationId}. Skipping this message.`,
+						`ProcessNotionWebhookUseCase: Destination or Webhook URL not found for destination ID: ${messageInfo.destinationId} (User: ${messageInfo.templateUserId}). Skipping this message.`,
 					);
 					continue;
 				}
 
 				const payload: NotificationPayload = {
-					content: messageInfo.body, // Discordの場合
-					// text: messageInfo.body, // Teamsの場合
+					content: messageInfo.body,
 				};
 
-				console.log(
-					`ProcessNotionWebhookUseCase: Sending to "${destination.name || destination.webhookUrl}"`,
-				);
 				await this.notificationClient.send(destination.webhookUrl, payload);
-				console.log(
-					`ProcessNotionWebhookUseCase: Successfully sent notification for template "${messageInfo.templateName}" to destination "${destination.name || destination.id}".`,
-				);
+				// 成功ログは現状維持
 			} catch (sendError) {
 				console.error(
-					`ProcessNotionWebhookUseCase: Error sending notification for template "${messageInfo.templateName}" to destination ID ${messageInfo.destinationId}:`,
+					`ProcessNotionWebhookUseCase: Error sending notification for template "${messageInfo.templateName}" to destination ID ${messageInfo.destinationId} (User: ${messageInfo.templateUserId}):`,
 					sendError,
 				);
 			}
