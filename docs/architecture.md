@@ -7,23 +7,24 @@ Notifier アプリは、変更容易性、テスト容易性、関心の分離�
 
 アプリケーションは、大きく分けて以下の 4 つのレイヤーで構成されています。依存関係は常に外側のレイヤーから内側のレイヤーへ向かい、内側のレイヤーは外側のレイヤーについて関知しません。
 
-```
+```mermaid
 graph TD
-A[プレゼンテーション層<br>(Hono, Handlers)] --> B(アプリケーション層<br>(UseCases, DTOs, Application Services));
-B --> C(ドメイン層<br>(Entities, Value Objects, Repository Interfaces, Domain Services));
-A --> D(インフラストラクチャ層<br>(Firestore, Notion API Client, Cache, Notification Client));
-B -.-> D; subgraph ドメインの核
-C
-end
-subgraph アプリケーション固有のビジネスルール
-B
-end
-subgraph 外部とのインターフェース
-A
-end
-subgraph フレームワーク、ドライバ、外部ツール
-D
-end
+    A["プレゼンテーション層<br>(Hono, Handlers)"] --> B["アプリケーション層<br>(UseCases, DTOs, Application Services)"];
+    B --> C["ドメイン層<br>(Entities, Value Objects, Repository Interfaces, Domain Services)"];
+    A --> D["インフラストラクチャ層<br>(Firestore, Notion API Client, Cache, Notification Client)"];
+    B -.-> D;
+    subgraph "ドメインの核"
+        C
+    end
+    subgraph "アプリケーション固有のビジネスルール"
+        B
+    end
+    subgraph "外部とのインターフェース"
+        A
+    end
+    subgraph "フレームワーク、ドライバ、外部ツール"
+        D
+    end
 
     style C fill:#f9f,stroke:#333,stroke-width:2px
     style B fill:#ccf,stroke:#333,stroke-width:2px
