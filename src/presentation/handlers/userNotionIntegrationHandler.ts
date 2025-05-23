@@ -1,91 +1,145 @@
-import { Context } from 'hono';
-import { CreateUserNotionIntegrationUseCase } from '../../application/usecases/createUserNotionIntegrationUseCase';
-import { ListUserNotionIntegrationsUseCase } from '../../application/usecases/listUserNotionIntegrationsUseCase';
-import { DeleteUserNotionIntegrationUseCase } from '../../application/usecases/deleteUserNotionIntegrationUseCase';
-import { CreateUserNotionIntegrationInput, DeleteUserNotionIntegrationInput } from '../../application/dtos/userNotionIntegrationDTOs';
-import { HTTPException } from 'hono/http-exception';
+// src/presentation/handlers/userNotionIntegrationHandler.ts (修正版)
 
-// Assuming c.var.user.id is populated by an auth middleware
-interface AuthenticatedContext extends Context {
-  var: {
-    user: {
-      id: string;
-    };
-  };
-}
+import type { Context } from "hono"; // Hono標準のContextを使う
+import type { CreateUserNotionIntegrationUseCase } from "../../application/usecases/createUserNotionIntegrationUseCase";
+import type { ListUserNotionIntegrationsUseCase } from "../../application/usecases/listUserNotionIntegrationsUseCase";
+import type { DeleteUserNotionIntegrationUseCase } from "../../application/usecases/deleteUserNotionIntegrationUseCase";
+import type {
+	CreateUserNotionIntegrationInput,
+	DeleteUserNotionIntegrationInput,
+	// Assuming CreateUserNotionIntegrationOutput is also in this DTO file or imported
+	CreateUserNotionIntegrationOutput,
+} from "../../application/dtos/userNotionIntegrationDTOs";
+import { HTTPException } from "hono/http-exception";
+
+// AuthenticatedContext インターフェースの定義は削除する！
 
 export function createUserNotionIntegrationHandlers(
-  createUseCase: CreateUserNotionIntegrationUseCase,
-  listUseCase: ListUserNotionIntegrationsUseCase,
-  deleteUseCase: DeleteUserNotionIntegrationUseCase
+	createUseCase: CreateUserNotionIntegrationUseCase,
+	listUseCase: ListUserNotionIntegrationsUseCase,
+	deleteUseCase: DeleteUserNotionIntegrationUseCase,
 ) {
-  const createIntegrationHandler = async (c: AuthenticatedContext) => {
-    try {
-      const { integrationName, notionIntegrationToken } = await c.req.json<{ integrationName: string; notionIntegrationToken: string }>();
-      const userId = c.var.user.id;
+	const createIntegrationHandler = async (c: Context) => {
+		try {
+			const { integrationName, notionIntegrationToken } = await c.req.json<{
+				integrationName: string;
+				notionIntegrationToken: string;
+			}>();
 
-      if (!integrationName || !notionIntegrationToken) {
-        throw new HTTPException(400, { message: 'integrationName and notionIntegrationToken are required' });
-      }
+			// authMiddlewareを通過していれば、userId は string 型として取得できるはず
+			// Honoの型拡張により、c.var.userId も string としてアクセス可能
+			// c.get() の方がより明示的かもしれない
+			const userId = c.var.userId; // または c.get("userId")
 
-      const input: CreateUserNotionIntegrationInput = {
-        userId,
-        integrationName,
-        notionIntegrationToken,
-      };
+			// 型ガード (より安全にするなら)
+			if (typeof userId !== "string") {
+				console.error(
+					"CRITICAL: userId not found in context or is not a string after authMiddleware.",
+				);
+				throw new HTTPException(401, {
+					message: "Unauthorized: User ID not found or invalid.",
+				});
+			}
 
-      const output = await createUseCase.execute(input);
-      return c.json(output, 201);
-    } catch (error: any) {
-      console.error('Error in createIntegrationHandler:', error);
-      if (error instanceof HTTPException) throw error;
-      throw new HTTPException(500, { message: 'Failed to create Notion integration', cause: error });
-    }
-  };
+			if (!integrationName || !notionIntegrationToken) {
+				throw new HTTPException(400, {
+					message: "integrationName and notionIntegrationToken are required",
+				});
+			}
 
-  const listIntegrationsHandler = async (c: AuthenticatedContext) => {
-    try {
-      const userId = c.var.user.id;
-      const output = await listUseCase.execute({ userId });
-      return c.json(output, 200);
-    } catch (error: any) {
-      console.error('Error in listIntegrationsHandler:', error);
-      throw new HTTPException(500, { message: 'Failed to list Notion integrations', cause: error });
-    }
-  };
+			const input: CreateUserNotionIntegrationInput = {
+				userId, // ここでは userId は string と確定
+				integrationName,
+				notionIntegrationToken,
+			};
 
-  const deleteIntegrationHandler = async (c: AuthenticatedContext) => {
-    try {
-      const integrationId = c.req.param('integrationId');
-      const userId = c.var.user.id;
+			const output = await createUseCase.execute(input);
+			return c.json(output, 201);
+			// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+		} catch (error: any) {
+			console.error("Error in createIntegrationHandler:", error);
+			if (error instanceof HTTPException) throw error;
+			throw new HTTPException(500, {
+				message: "Failed to create Notion integration",
+				cause: error,
+			});
+		}
+	};
 
-      if (!integrationId) {
-        throw new HTTPException(400, { message: 'integrationId path parameter is required' });
-      }
+	const listIntegrationsHandler = async (c: Context) => {
+		// c の型を Context に変更
+		try {
+			const userId = c.var.userId; // または c.get("userId")
+			if (typeof userId !== "string") {
+				console.error(
+					"CRITICAL: userId not found in context or is not a string after authMiddleware.",
+				);
+				throw new HTTPException(401, {
+					message: "Unauthorized: User ID not found or invalid.",
+				});
+			}
+			const output = await listUseCase.execute({ userId });
+			return c.json(output, 200);
+			// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+		} catch (error: any) {
+			console.error("Error in listIntegrationsHandler:", error);
+			throw new HTTPException(500, {
+				message: "Failed to list Notion integrations",
+				cause: error,
+			});
+		}
+	};
 
-      const input: DeleteUserNotionIntegrationInput = {
-        integrationId,
-        userId,
-      };
+	const deleteIntegrationHandler = async (c: Context) => {
+		// c の型を Context に変更
+		try {
+			const integrationId = c.req.param("integrationId");
+			const userId = c.var.userId; // または c.get("userId")
 
-      const result = await deleteUseCase.execute(input);
+			if (typeof userId !== "string") {
+				console.error(
+					"CRITICAL: userId not found in context or is not a string after authMiddleware.",
+				);
+				throw new HTTPException(401, {
+					message: "Unauthorized: User ID not found or invalid.",
+				});
+			}
 
-      if (!result.success) {
-        throw new HTTPException(404, { message: result.message || `Notion integration with ID ${integrationId} not found.` });
-      }
-      // Consider 204 No Content for successful deletions where no body is returned.
-      // If returning a body (like a success message), 200 OK is appropriate.
-      return c.json({ message: result.message }, 200); 
-    } catch (error: any) {
-      console.error('Error in deleteIntegrationHandler:', error);
-      if (error instanceof HTTPException) throw error;
-      throw new HTTPException(500, { message: 'Failed to delete Notion integration', cause: error });
-    }
-  };
+			if (!integrationId) {
+				throw new HTTPException(400, {
+					message: "integrationId path parameter is required",
+				});
+			}
 
-  return {
-    createIntegrationHandler,
-    listIntegrationsHandler,
-    deleteIntegrationHandler,
-  };
+			const input: DeleteUserNotionIntegrationInput = {
+				integrationId,
+				userId,
+			};
+
+			const result = await deleteUseCase.execute(input);
+
+			if (!result.success) {
+				throw new HTTPException(404, {
+					message:
+						result.message ||
+						`Notion integration with ID ${integrationId} not found.`,
+				});
+			}
+			return c.json({ message: result.message }, 200); // 成功時は200 OKとメッセージを返す例
+			// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+		} catch (error: any) {
+			console.error("Error in deleteIntegrationHandler:", error);
+			if (error instanceof HTTPException) throw error;
+			throw new HTTPException(500, {
+				message: "Failed to delete Notion integration",
+				cause: error,
+			});
+		}
+	};
+
+	return {
+		createIntegrationHandler,
+		listIntegrationsHandler,
+		deleteIntegrationHandler,
+	};
 }
