@@ -8,6 +8,7 @@ import type {
 	NotionApiService,
 	NotionDatabaseSchema,
 	NotionPropertySchema,
+	AccessibleNotionDatabase, // Import new interface
 } from "../../domain/services/notionApiService";
 import type { CacheService } from "../../application/services/cacheService"; // ★ CacheService をインポート
 
@@ -135,5 +136,58 @@ export class NotionApiClient implements NotionApiService {
 			title: databaseTitle,
 			properties: properties,
 		};
+	}
+
+	// ADD THIS METHOD IMPLEMENTATION
+	async listAccessibleDatabases(userNotionToken: string): Promise<AccessibleNotionDatabase[]> {
+		const notion = new Client({ auth: userNotionToken });
+		const databases: AccessibleNotionDatabase[] = [];
+		let hasMore = true;
+		let startCursor: string | undefined = undefined;
+
+		console.log("NotionApiClient: Fetching accessible databases...");
+
+		try {
+			while (hasMore) {
+				const response = await notion.search({
+					filter: { value: "database", property: "object" },
+					page_size: 100, // Notion's max page_size is 100
+					start_cursor: startCursor,
+				});
+
+				response.results.forEach((dbResult) => {
+					// Ensure the result is a DatabaseObjectResponse
+					if (dbResult.object === "database" && "title" in dbResult) {
+						const fullDbResult = dbResult as DatabaseObjectResponse; // Type assertion
+						const titleArray = fullDbResult.title;
+						const name = Array.isArray(titleArray) && titleArray.length > 0
+							? titleArray.map((t) => t.plain_text).join("")
+							: "Untitled Database";
+						
+						databases.push({
+							id: fullDbResult.id,
+							name: name,
+						});
+					} else {
+						// Log if a search result is not a database object as expected
+						console.warn("NotionApiClient: Encountered non-database object in search results or missing title:", dbResult);
+					}
+				});
+
+				hasMore = response.has_more;
+				startCursor = response.next_cursor || undefined;
+			}
+			console.log(`NotionApiClient: Found ${databases.length} accessible databases.`);
+			return databases;
+		} catch (error: any) {
+			console.error(
+				"NotionApiClient: Error listing accessible databases:",
+				error.code || error.name,
+				error.body || error.message,
+			);
+			// Depending on the error, you might want to throw a custom error or return an empty array
+			// For now, re-throwing the original error
+			throw error;
+		}
 	}
 }

@@ -17,6 +17,12 @@ export interface NotionDatabaseSchema {
 	// 他にも必要な情報があれば追加 (例: parent情報とか)
 }
 
+// ADD THIS INTERFACE
+export interface AccessibleNotionDatabase {
+  id: string;
+  name: string;
+}
+
 // Notion APIとやり取りするサービスのインターフェース
 export interface NotionApiService {
 	/**

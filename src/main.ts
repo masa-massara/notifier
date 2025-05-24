@@ -2,7 +2,8 @@
 import { Hono } from "hono";
 
 // Firebase Admin SDK関連のimport
-import { initializeApp, cert, getApps, App } from "firebase-admin/app"; // App をインポート
+import { initializeApp, cert, getApps, App } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore"; // Static import for Firestore
 
 // --- Domain層のインポート ---
 import type { TemplateRepository } from "./domain/repositories/templateRepository";
@@ -31,11 +32,16 @@ import { DeleteDestinationUseCase } from "./application/usecases/deleteDestinati
 import { CreateUserNotionIntegrationUseCase } from "./application/usecases/createUserNotionIntegrationUseCase";
 import { ListUserNotionIntegrationsUseCase } from "./application/usecases/listUserNotionIntegrationsUseCase";
 import { DeleteUserNotionIntegrationUseCase } from "./application/usecases/deleteUserNotionIntegrationUseCase";
+import { ListNotionDatabasesUseCase } from "./application/usecases/listNotionDatabasesUseCase";
+// ADD IMPORT FOR THE NEW USE CASE
+import { GetNotionDatabasePropertiesUseCase } from "./application/usecases/getNotionDatabasePropertiesUseCase";
+
 
 import { ProcessNotionWebhookUseCase } from "./application/usecases/processNotionWebhookUseCase";
 import { MessageFormatterServiceImpl } from "./application/services/messageFormatterServiceImpl";
 
 // --- Infrastructure層 (具体的な実装) のインポート ---
+// ... (keep existing infrastructure imports)
 import { InMemoryTemplateRepository } from "./infrastructure/persistence/inMemory/inMemoryTemplateRepository";
 import { FirestoreTemplateRepository } from "./infrastructure/persistence/firestore/firestoreTemplateRepository";
 import { FirestoreDestinationRepository } from "./infrastructure/persistence/firestore/firestoreDestinationRepository";
@@ -62,12 +68,11 @@ import {
 } from "./presentation/handlers/destinationHandler";
 import { notionWebhookHandlerFactory } from "./presentation/handlers/notionWebhookHandler";
 import { createUserNotionIntegrationHandlers } from "./presentation/handlers/userNotionIntegrationHandler";
+// ADD IMPORT FOR THE NEW HANDLER FACTORY
+import { getNotionDatabasePropertiesHandlerFactory } from "./presentation/handlers/notionDatabaseHandler";
 
-// ★★★ 認証ミドルウェアをインポート ★★★
 import { authMiddleware } from "./presentation/middleware/authMiddleware";
 
-// Honoの型拡張 (もし別の .d.ts ファイルに定義してない場合はここに書くか、importする)
-// 通常は src/hono.env.d.ts のようなファイルに記述することを推奨
 import "hono";
 import { cors } from "hono/cors";
 
@@ -77,32 +82,30 @@ declare module "hono" {
 	}
 }
 
-const app = new Hono<{ Variables: { userId: string } }>(); // Honoの型に変数を追加
+const app = new Hono<{ Variables: { userId: string } }>();
 
 app.use(
-	"*", // すべてのパス、または '/api/v1/*' のようにAPIのベースパスを指定
+	"*",
 	cors({
 		origin: [
 			"http://localhost:3000",
 			"http://localhost:3001",
-			// 'https://your-frontend-domain.com'
 		],
-		allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // 実際に使うメソッド
-		allowHeaders: ["Content-Type", "Authorization"], // フロントから送る可能性のあるヘッダー
-		credentials: true, // もしCookieや認証情報を伴うリクエストなら true
+		allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+		allowHeaders: ["Content-Type", "Authorization"],
+		credentials: true,
 	}),
 );
 
-// --- 定数定義 ---
 const USE_FIRESTORE_DB = true;
 
-// --- Firebase Admin SDK の初期化 ---
+// --- Firebase Admin SDK Initialization ---
+// ... (keep existing Firebase init logic)
 if (USE_FIRESTORE_DB && process.env.NODE_ENV !== "test") {
 	if (!getApps().length) {
 		const serviceAccountPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 		try {
 			if (serviceAccountPath) {
-				// GOOGLE_APPLICATION_CREDENTIALS が設定されている場合 (ローカル開発など)
 				console.log(
 					`Initializing Firebase Admin SDK with service account from: ${serviceAccountPath}`,
 				);
@@ -110,12 +113,10 @@ if (USE_FIRESTORE_DB && process.env.NODE_ENV !== "test") {
 					credential: cert(serviceAccountPath),
 				});
 			} else {
-				// GOOGLE_APPLICATION_CREDENTIALS が設定されていない場合 (Cloud Runなど)
-				// 引数なしで initializeApp() を呼び、環境のデフォルト認証情報 (実行サービスアカウント) を使用する
 				console.log(
 					"Initializing Firebase Admin SDK with default credentials (runtime service account).",
 				);
-				initializeApp(); // ← ★★★ Cloud Runで動くための鍵！ ★★★
+				initializeApp();
 			}
 			console.log("Firebase Admin SDK initialized centrally in main.ts.");
 		} catch (e: unknown) {
@@ -133,8 +134,9 @@ if (USE_FIRESTORE_DB && process.env.NODE_ENV !== "test") {
 	}
 }
 
-// --- 環境変数のチェック ---
-// ENCRYPTION_KEY は NodeCryptoEncryptionService で使われる
+
+// --- Environment Variable Checks ---
+// ... (keep existing env var checks)
 const encryptionKey = process.env.ENCRYPTION_KEY;
 if (!encryptionKey) {
 	const errorMessage =
@@ -143,13 +145,14 @@ if (!encryptionKey) {
 	throw new Error(errorMessage);
 }
 
-// --- DIのセットアップ ---
+
+// --- DI Setup ---
+// ... (keep existing DI setup for repositories and services)
 let templateRepository: TemplateRepository;
 let destinationRepository: DestinationRepository;
 let userNotionIntegrationRepository: UserNotionIntegrationRepository;
 
 const cacheService: CacheService = new InMemoryCacheService();
-// NotionApiClientはグローバルトークンを持たなくなったので、コンストラクタ引数から削除
 const notionApiService: NotionApiService = new NotionApiClient(cacheService);
 const encryptionService: EncryptionService = new NodeCryptoEncryptionService(
 	encryptionKey,
@@ -163,26 +166,19 @@ let persistenceTypeMessage: string;
 if (USE_FIRESTORE_DB) {
 	templateRepository = new FirestoreTemplateRepository();
 	destinationRepository = new FirestoreDestinationRepository();
-	// FirestoreUserNotionIntegrationRepository の初期化方法を修正
-	// getFirestore() を使うのが firebase-admin v10以降の推奨
-	// もし @google-cloud/firestore を直接使いたい場合は、そのインスタンスを渡す
-	// ここでは getFirestore() を使う形にしておく (Admin SDKで初期化済みならこれが使える)
-	// userNotionIntegrationRepository = new FirestoreUserNotionIntegrationRepository(new (require('@google-cloud/firestore').Firestore)()); // Devinの実装に合わせて調整
-	// Admin SDKの getFirestore() を使うのが一般的
-	const { getFirestore } = await import("firebase-admin/firestore"); // 動的インポートは避けるか、トップレベルで
 	userNotionIntegrationRepository =
 		new FirestoreUserNotionIntegrationRepository(getFirestore());
-
 	persistenceTypeMessage = "Persistence: Firestore";
 } else {
 	templateRepository = new InMemoryTemplateRepository();
-	// userNotionIntegrationRepository = new InMemoryUserNotionIntegrationRepository(); // TODO: 実装が必要なら
 	throw new Error(
 		"InMemoryDestinationRepository and/or InMemoryUserNotionIntegrationRepository are not implemented for this fallback scenario, or USE_FIRESTORE_DB is unexpectedly false.",
 	);
 }
 
+
 // --- ユースケースのインスタンス化 ---
+// ... (keep existing use case instantiations)
 const createTemplateUseCase = new CreateTemplateUseCase(
 	templateRepository,
 	userNotionIntegrationRepository,
@@ -213,7 +209,6 @@ const deleteDestinationUseCase = new DeleteDestinationUseCase(
 	destinationRepository,
 );
 
-// UserNotionIntegration UseCases Instantiation
 const createUserNotionIntegrationUseCase =
 	new CreateUserNotionIntegrationUseCase(
 		userNotionIntegrationRepository,
@@ -224,6 +219,20 @@ const listUserNotionIntegrationsUseCase = new ListUserNotionIntegrationsUseCase(
 );
 const deleteUserNotionIntegrationUseCase =
 	new DeleteUserNotionIntegrationUseCase(userNotionIntegrationRepository);
+
+const listNotionDatabasesUseCase = new ListNotionDatabasesUseCase(
+    userNotionIntegrationRepository,
+    encryptionService,
+    notionApiService,
+);
+
+// INSTANTIATE THE NEW GetNotionDatabasePropertiesUseCase
+const getNotionDatabasePropertiesUseCase = new GetNotionDatabasePropertiesUseCase(
+    userNotionIntegrationRepository,
+    encryptionService,
+    notionApiService,
+    cacheService, // Make sure cacheService is passed
+);
 
 const processNotionWebhookUseCase = new ProcessNotionWebhookUseCase(
 	templateRepository,
@@ -236,12 +245,11 @@ const processNotionWebhookUseCase = new ProcessNotionWebhookUseCase(
 );
 
 // --- ルーティング定義 ---
-const apiV1 = new Hono<{ Variables: { userId: string } }>(); // Honoの型に変数を追加
-
-// ★★★ /api/v1 のルートグループ全体に認証ミドルウェアを適用 ★★★
+const apiV1 = new Hono<{ Variables: { userId: string } }>();
 apiV1.use("*", authMiddleware);
 
 // Template API
+// ... (keep existing template API routes)
 apiV1.post("/templates", createTemplateHandlerFactory(createTemplateUseCase));
 apiV1.get("/templates/:id", getTemplateByIdHandlerFactory(getTemplateUseCase));
 apiV1.get("/templates", listTemplatesHandlerFactory(listTemplatesUseCase));
@@ -254,7 +262,9 @@ apiV1.delete(
 	deleteTemplateHandlerFactory(deleteTemplateUseCase),
 );
 
+
 // Destination API
+// ... (keep existing destination API routes)
 apiV1.post(
 	"/destinations",
 	createDestinationHandlerFactory(createDestinationUseCase),
@@ -276,15 +286,16 @@ apiV1.delete(
 	deleteDestinationHandlerFactory(deleteDestinationUseCase),
 );
 
+
 // User Notion Integration API
 const userNotionIntegrationHandlers = createUserNotionIntegrationHandlers(
 	createUserNotionIntegrationUseCase,
 	listUserNotionIntegrationsUseCase,
 	deleteUserNotionIntegrationUseCase,
+    listNotionDatabasesUseCase,
 );
 
-// userNotionIntegrationApi を apiV1 のサブアプリケーションとして定義
-const userNotionIntegrationApi = new Hono<{ Variables: { userId: string } }>(); // サブアプリにも型を適用
+const userNotionIntegrationApi = new Hono<{ Variables: { userId: string } }>();
 userNotionIntegrationApi.post(
 	"/",
 	userNotionIntegrationHandlers.createIntegrationHandler,
@@ -297,19 +308,37 @@ userNotionIntegrationApi.delete(
 	"/:integrationId",
 	userNotionIntegrationHandlers.deleteIntegrationHandler,
 );
-
+userNotionIntegrationApi.get(
+    "/:integrationId/databases",
+    userNotionIntegrationHandlers.listUserAccessibleDatabasesHandler,
+);
 apiV1.route("/me/notion-integrations", userNotionIntegrationApi);
+
+
+// INSTANTIATE THE NEW HANDLER
+const getNotionDatabasePropertiesHandler = getNotionDatabasePropertiesHandlerFactory(getNotionDatabasePropertiesUseCase);
+
+// ADD THE NEW ROUTE TO apiV1
+apiV1.get(
+    "/notion-databases/:databaseId/properties",
+    getNotionDatabasePropertiesHandler,
+);
+
 
 app.route("/api/v1", apiV1);
 
-// Webhook Endpoint (認証ミドルウェアの対象外)
+// Webhook Endpoint
+// ... (keep existing webhook route)
 app.post(
 	"/webhooks/notion",
 	notionWebhookHandlerFactory(processNotionWebhookUseCase),
 );
 
-// Root Endpoint (認証不要)
+
+// Root Endpoint
+// ... (keep existing root route)
 app.get("/", (c) => c.text("Notifier App is running!"));
+
 
 export default {
 	port: process.env.PORT || 3000,
