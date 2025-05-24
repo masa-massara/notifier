@@ -68,7 +68,8 @@ Firebase Emulator Suite を利用するために、Dev Container 内に Firebase
 ```env
 # .env ファイルの例
 
-NOTION_INTEGRATION_TOKEN="secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+# (DEPRECATED - See note below) NOTION_INTEGRATION_TOKEN="secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+ENCRYPTION_KEY="your_64_character_hex_encryption_key_for_aes_256_gcm" # ★★★ NEW ★★★
 
 # GOOGLE_APPLICATION_CREDENTIALS は docker-compose.yml で直接設定するため、ここには不要です。
 # FIREBASE_AUTH_EMULATOR_HOST や FIRESTORE_EMULATOR_HOST も、
@@ -77,8 +78,48 @@ NOTION_INTEGRATION_TOKEN="secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 # PORT=3000 # 必要に応じてアプリケーションのポート番号を指定 (デフォルトは 3000)
 ```
 
--   `NOTION_INTEGRATION_TOKEN`: 手順 3.1 で取得した Notion の内部インテグレーションシークレットをここに貼り付けてください。
+-   `NOTION_INTEGRATION_TOKEN`: (非推奨) 以前はグローバルなNotionインテグレーションTOKENとして使用されていましたが、現在はユーザーごとのNotionインテグレーション機能に移行したため、このグローバルTOKENは通常不要になります。詳細は「Global `NOTION_INTEGRATION_TOKEN` Environment Variable」セクションを参照してください。
+-   `ENCRYPTION_KEY`: ★★★ 新規追加 ★★★ ユーザーのNotionインテグレーションTOKENを暗号化・復号化するために使用されるAES-256-GCM用のキーです。**必ず64文字の16進数文字列（32バイトのキーに相当）を設定してください。** このキーはセキュリティ上非常に重要ですので、安全に管理してください。キーの生成には、OpenSSLなどのツールを使用できます（例: `openssl rand -hex 32`）。
 -   **注意**: `.env` ファイルは `.gitignore` に追加し、Git リポジトリにコミットしないでください。
+
+### 3.6. ユーザーごとのNotionインテグレーションの登録 (Notifierアプリへの登録)
+
+Notifierアプリで通知テンプレートを作成・利用するには、まずユーザー自身のNotionインテグレーション情報をアプリに登録する必要があります。
+
+1.  **Notion で内部インテグレーションを作成**:
+    -   Notionのワークスペースで、新しい内部インテグレーションを作成します。
+    -   詳細な手順は、Notionの公式ガイドを参照してください: [Create integrations with the Notion API](https://www.notion.so/help/create-integrations-with-the-notion-api)
+    -   インテグレーションの「Capabilities」(機能)設定では、少なくとも「Read content」(コンテンツの読み取り)権限が必要です。将来的に他の機能を利用する場合は、追加の権限が必要になることがあります。
+2.  **内部インテグレーションTOKENの取得**:
+    -   作成したインテグレーションの設定ページで、「Secrets」セクションにある「Internal Integration Token」をコピーします。このTOKENは `secret_` で始まります。 **このTOKENは他人に公開しないでください。**
+3.  **対象データベースをインテレーションと共有**:
+    -   Notifierアプリで通知を設定したいNotionデータベースを開きます。
+    -   右上の「•••」(メニュー) > 「Add connections」(コネクト追加) (または「接続先を追加」) を選択し、ステップ1で作成した自身のインテグレーションを検索して選択します。
+    -   これにより、あなたのインテグレーションがそのデータベースにアクセスできるようになります。
+4.  **Notifier アプリへの登録**:
+    -   取得した「Internal Integration Token」をNotifierアプリに登録します。これには、`POST /api/v1/me/notion-integrations` エンドポイントを使用します。
+    -   リクエスト例 (cURLを使用):
+        ```bash
+        curl -X POST http://localhost:3000/api/v1/me/notion-integrations \
+         -H "Content-Type: application/json" \
+         -H "Authorization: Bearer YOUR_FIREBASE_ID_TOKEN" \
+         -d '{
+           "integrationName": "My Personal Notion Workspace",
+           "notionIntegrationToken": "secret_YOUR_INTERNAL_INTEGRATION_TOKEN_HERE"
+         }'
+        ```
+    -   `YOUR_FIREBASE_ID_TOKEN` は、Firebase Authentication で取得した有効なIDトークンに置き換えてください。
+    -   `integrationName` には、この連携を識別するための任意の名前を指定します。
+    -   成功すると、登録された連携のIDなどが返されます (TOKEN自体は返されません)。このID (`userNotionIntegrationId`) は、通知テンプレートを作成する際に必要になります。
+5.  **登録した連携の利用**:
+    -   通知テンプレートを作成 (<code>POST /api/v1/templates</code>) する際、リクエストボディに `userNotionIntegrationId`として、上記ステップ4で返却された連携IDを指定します。これにより、テンプレートはそのNotion連携を使用してデータベースにアクセスします。
+    -   **開発・テスト目的での自動作成**: 開発およびテスト目的で、`seed_mock_data.sh` スクリプト（詳細は後述の「5.1. モックデータの投入」セクションを参照）を実行することで、`TEST_USER_EMAIL` で定義されたテストユーザーに対して、サンプルとなるユーザーNotion連携と、それに関連付けられた通知テンプレートを自動的に作成することができます。この際、環境変数 `TEST_USER_MOCK_NOTION_TOKEN` が使用されます。
+
+### 3.7. モックデータ投入スクリプト用の環境変数 (オプション)
+
+`seed_mock_data.sh` スクリプトは、テストユーザー (`TEST_USER_EMAIL`, `TEST_USER_PASSWORD`で指定) のための初期データ（送信先、ユーザーNotion連携、通知テンプレート）を自動生成します。このスクリプトは、以下の追加の環境変数を認識します。
+
+-   `TEST_USER_MOCK_NOTION_TOKEN`: この環境変数は、`seed_mock_data.sh` スクリプトが「Mock User Integration (auto-created)」という名前のユーザーNotion連携を作成する際に使用するモックのNotionインテグレーションTOKENを提供します。このTOKENは実際の有効なNotion TOKENである必要はありませんが、文字列である必要があります。設定されていない場合、スクリプトはデフォルトのモック値を使用します。
 
 ## 4. アプリケーションの起動 と Firebase Emulator Suite の利用 (開発環境)
 
@@ -172,3 +213,26 @@ docker-compose up --build
 Firebase Emulator Suite も起動していれば、`http://localhost:4000` で Emulator UI にアクセスできます。
 
 取得したIDトークンを `Authorization: Bearer <ID_TOKEN>` ヘッダーに含めて、保護されたAPIエンドポイント（例: `GET http://localhost:3000/api/v1/templates`）にリクエストを送信し、動作を確認してください。詳細は [API エンドポイント仕様 (`docs/api_reference.md`)] を参照してください。
+
+### 5.1. モックデータの投入 (オプション)
+
+開発初期段階やテストのために、`seed_mock_data.sh` スクリプトを使用して、テストユーザー (`TEST_USER_EMAIL` で指定) にサンプルデータを投入できます。
+
+1.  **環境変数の確認**:
+    -   スクリプトの実行には、`TEST_USER_EMAIL` と `TEST_USER_PASSWORD` 環境変数が設定されている必要があります。
+    -   オプションで `TEST_USER_MOCK_NOTION_TOKEN` を設定して、ユーザーNotion連携に使用されるモックTOKENを指定できます（未設定の場合はスクリプト内のデフォルト値が使用されます）。
+    -   スクリプト内の `DESTINATION_WEBHOOK_URL` が有効なWebhook URLに設定されていることを確認してください。
+2.  **スクリプトの実行**:
+    -   Dev Container のターミナルで、プロジェクトルートから以下のコマンドを実行します。
+        ```bash
+        bash ./seed_mock_data.sh
+        ```
+3.  **生成されるデータ**:
+    -   スクリプトは以下のデータを作成します:
+        -   `TEST_USER_EMAIL` で指定されたテストユーザー用のIDトークンを取得します。
+        -   指定された `DESTINATION_WEBHOOK_URL` を持つ通知送信先 (Destination) を1つ作成します。
+        -   「Mock User Integration (auto-created)」という名前のユーザーNotion連携 (User Notion Integration) を1つ作成します。この際、`TEST_USER_MOCK_NOTION_TOKEN` の値（またはデフォルトのモックTOKEN）が使用されます。
+        -   作成された送信先とユーザーNotion連携に紐づいた通知テンプレート (Template) を1つ作成します。
+    -   各処理の成功・失敗はコンソールに出力されます。
+
+これにより、手動でAPIを呼び出すことなく、基本的な動作確認に必要なデータセットを迅速に準備できます。

@@ -14,25 +14,17 @@ import type { CacheService } from "../../application/services/cacheService"; // 
 const CACHE_TTL_SECONDS = 1800; // 例: 30分キャッシュ (30 * 60)
 
 export class NotionApiClient implements NotionApiService {
-	private notion: Client;
-	private notionIntegrationToken: string;
 	private cacheService: CacheService; // ★ CacheService を保持するプロパティ
 
-	constructor(notionIntegrationToken: string, cacheService: CacheService) {
+	constructor(cacheService: CacheService) { // notionIntegrationToken removed
 		// ★ 引数に cacheService を追加
-		if (!notionIntegrationToken) {
-			throw new Error(
-				"Notion integration token is required for NotionApiClient.",
-			);
-		}
-		this.notionIntegrationToken = notionIntegrationToken;
-		this.notion = new Client({ auth: this.notionIntegrationToken });
 		this.cacheService = cacheService; // ★ cacheService をプロパティに設定
 		console.log("NotionApiClient initialized with CacheService.");
 	}
 
 	async getDatabaseSchema(
 		databaseId: string,
+		userNotionToken: string, // Added userNotionToken
 	): Promise<NotionDatabaseSchema | null> {
 		const cacheKey = `notion_db_schema_${databaseId}`; // キャッシュ用のキー
 
@@ -51,7 +43,10 @@ export class NotionApiClient implements NotionApiService {
 
 		// 2. キャッシュになければAPIから取得
 		try {
-			const response = await this.notion.databases.retrieve({
+			// Instantiate Notion Client here, using the userNotionToken
+			const notion = new Client({ auth: userNotionToken });
+
+			const response = await notion.databases.retrieve({ // Use the new notion client
 				database_id: databaseId,
 			});
 

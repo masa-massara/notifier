@@ -1,0 +1,18 @@
+# docker-compose.prod.yml
+# 本番用のDockerイメージをビルドするための設定ファイル
+# Cloud Runへのデプロイを想定しており、主にイメージ名とDockerfileの指定を行う
+
+version: '3.8'
+
+services:
+  app:
+    # イメージ名を指定（例: gcr.io/YOUR_PROJECT_ID/notifier-app:latest のように、
+    # Artifact Registryのパスを含めても良いし、ローカルでのビルド名としても使える）
+    image: notifier-app-prod:latest
+    build:
+      context: . # プロジェクトのルートディレクトリをビルドコンテキストにする
+      dockerfile: Dockerfile.prod # 本番用のDockerfile名を指定 (例: Dockerfile.prod)
+      # ビルド時の引数が必要な場合はここで設定できる (例: args: - BUILD_VERSION=1.0)
+    # このファイルは主にイメージビルド用なので、
+    # ports, volumes, environment, command などの実行時設定は通常不要。
+    # それらはCloud Runのサービス定義で設定する。

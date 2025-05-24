@@ -36,13 +36,19 @@ Notifier App は、Notion データベース内のページの変更をトリガ
     プロジェクトのルートディレクトリに `.env` という名前のファイルを作成し、以下の内容を記述してください。実際の値は各サービスから取得してください。
 
     ```env
-    NOTION_INTEGRATION_TOKEN="your_notion_integration_secret_here"
+    # NOTION_INTEGRATION_TOKEN="your_notion_integration_secret_here" # (DEPRECATED - See below)
+    ENCRYPTION_KEY="your_64_character_hex_encryption_key_for_aes_256_gcm" # ★★★ NEW ★★★
+    # TEST_USER_MOCK_NOTION_TOKEN="mock_secret_for_seed_script_if_needed" # (Optional - For seed script)
+
     # GOOGLE_APPLICATION_CREDENTIALS は docker-compose.yml 経由で設定されます
     # PORT=3000 # 必要であれば指定 (デフォルト3000)
     # FIREBASE_AUTH_EMULATOR_HOST, FIRESTORE_EMULATOR_HOST も docker-compose.yml で設定します
     ```
 
-    **注意**: `.env` ファイルは `.gitignore` に追加し、Git リポジトリにコミットしないでください。
+    -   `NOTION_INTEGRATION_TOKEN`: (非推奨) 以前はグローバルなNotionインテグレーションTOKENとして使用されていましたが、現在はユーザーごとのNotionインテグレーション機能 (`/api/v1/me/notion-integrations`) の導入により、このグローバルTOKENはAPIの主要機能では使用されなくなりました。特定のスタンドアロンプロセスや将来的な管理機能のために残す可能性もありますが、通常のユーザー操作では不要です。詳細は `docs/setup_detailed.md` を参照してください。
+    -   `ENCRYPTION_KEY`: ★★★ 新規追加 ★★★ ユーザーのNotionインテグレーションTOKENを暗号化・復号化するために必須のキーです。**必ず64文字の16進数文字列（32バイトのキーに相当）を設定してください。** キーの生成例: `openssl rand -hex 32`。
+    -   `TEST_USER_MOCK_NOTION_TOKEN`: (オプション) `seed_mock_data.sh` スクリプトが使用するモックのNotionインテグレーションTOKENです。設定されていない場合、スクリプトはデフォルトのモック値を使用します。これは実際の有効なTOKENである必要はありません。
+    -   **注意**: `.env` ファイルは `.gitignore` に追加し、Git リポジトリにコミットしないでください。
 
 2.  **Google Cloud サービスアカウントキーの配置**:
     -   Google Cloud Platform (GCP) でプロジェクトを作成し、Firestore を有効化してください。
@@ -51,9 +57,9 @@ Notifier App は、Notion データベース内のページの変更をトリガ
     -   プロジェクトのルートディレクトリに `.gcloud` というフォルダを作成し、ダウンロードした JSON キーファイルを `service-account-key.json` という名前でその中 (`.gcloud/service-account-key.json`) に配置してください。
     -   **注意**: `.gcloud` フォルダおよびキーファイルも `.gitignore` に追加し、Git リポジトリにコミットしないでください。
 
-3.  **Notion インテグレーションの設定**:
-    -   Notion で新しいインテグレーションを作成し、「内部インテグレーションシークレット」（これが`NOTION_INTEGRATION_TOKEN`になります）を取得してください。
-    -   通知の対象としたい Notion データベースの「接続」設定で、作成したインテグレーションを追加し、必要な権限（最低でも読み取り権限）を与えてください。
+3.  **Notion インテグレーションの設定 (ユーザーごと)**:
+    -   このアプリケーションは、ユーザーが自身のNotionインテグレーションTOKENを登録して使用する形になりました。ユーザーは自身でNotionインテグレーションを作成し、そのTOKENを本アプリケーションのAPI経由で登録します。
+    -   通知の対象としたい Notion データベースの「接続」設定で、ユーザーが自身のインテグレーションを追加し、必要な権限（最低でも読み取り権限）を与える必要があります。
 
 4.  **Firebase Authentication と Emulator Suite の設定**:
     -   Firebase プロジェクトで Authentication を有効化し、「メール/パスワード」サインイン方法を有効にしてください。
