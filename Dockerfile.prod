@@ -1,0 +1,43 @@
+# --- ベースイメージ ---
+# 軽量なスリム版のBunイメージを使用する
+FROM oven/bun:1-slim AS base
+
+# --- ビルドステージ ---
+# アプリケーションの依存関係をインストールし、場合によってはビルドを行うステージ
+FROM base AS build
+WORKDIR /usr/src/app
+
+# 依存関係の定義ファイルをコピー
+COPY package.json bun.lock ./
+
+# 本番用の依存関係のみをインストール
+RUN bun install --production --frozen-lockfile
+
+# アプリケーションのソースコードをコピー
+COPY ./src ./src
+COPY ./tsconfig.json ./tsconfig.json
+# もし他に実行に必要なファイルがあればここに追加 (例: publicフォルダとか)
+
+# --- 実行ステージ ---
+# 実際にアプリケーションを実行するステージ
+FROM base AS release
+WORKDIR /usr/src/app
+
+# 環境変数NODE_ENVをproductionに設定 (Cloud Run側でも設定するが、イメージに含めても良い)
+ENV NODE_ENV=production
+# アプリがリッスンするポート (Cloud Runは通常PORT環境変数で8080を渡してくる)
+# EXPOSE命令はドキュメンテーションの意味合いが強いが、設定しておくと良い
+EXPOSE ${PORT:-8080}
+
+# ビルドステージから、インストール済みの依存関係とソースコードをコピー
+COPY --from=build /usr/src/app/node_modules ./node_modules
+COPY --from=build /usr/src/app/src ./src
+COPY --from=build /usr/src/app/tsconfig.json ./tsconfig.json
+# package.jsonとbun.lockもコピーしておくと、実行時にbunが情報を参照できる
+COPY --from=build /usr/src/app/package.json ./package.json
+COPY --from=build /usr/src/app/bun.lock ./bun.lock
+
+
+# アプリケーションの起動コマンド
+# src/main.ts がprocess.env.PORTを参照するようにしておく (現状そうなっている)
+CMD ["bun", "src/main.ts"]

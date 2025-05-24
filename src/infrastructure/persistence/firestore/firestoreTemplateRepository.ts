@@ -32,6 +32,7 @@ export class FirestoreTemplateRepository implements TemplateRepository {
 			conditions: template.conditions,
 			destinationId: template.destinationId,
 			userId: template.userId,
+			userNotionIntegrationId: template.userNotionIntegrationId || null, // Save, ensuring null if undefined
 			createdAt: template.createdAt,
 			updatedAt: template.updatedAt,
 		});
@@ -74,6 +75,7 @@ export class FirestoreTemplateRepository implements TemplateRepository {
 			data.conditions,
 			data.destinationId,
 			data.userId,
+			data.userNotionIntegrationId || null, // Populate, defaulting to null
 			data.createdAt.toDate
 				? data.createdAt.toDate()
 				: new Date(data.createdAt),
@@ -110,6 +112,7 @@ export class FirestoreTemplateRepository implements TemplateRepository {
 				data.conditions,
 				data.destinationId,
 				data.userId,
+			data.userNotionIntegrationId || null, // Populate, defaulting to null
 				data.createdAt.toDate
 					? data.createdAt.toDate()
 					: new Date(data.createdAt),
@@ -162,6 +165,7 @@ export class FirestoreTemplateRepository implements TemplateRepository {
 					data.conditions as any,
 					data.destinationId as string,
 					data.userId as string, // userIdをマッピング
+					data.userNotionIntegrationId || null, // Populate, defaulting to null
 					data.createdAt?.toDate
 						? data.createdAt.toDate()
 						: new Date(data.createdAt),
@@ -246,6 +250,7 @@ export class FirestoreTemplateRepository implements TemplateRepository {
 					data.conditions as any,
 					data.destinationId as string,
 					data.userId as string,
+					data.userNotionIntegrationId || null, // Populate, defaulting to null
 					data.createdAt?.toDate
 						? data.createdAt.toDate()
 						: new Date(data.createdAt),

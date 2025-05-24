@@ -26,6 +26,7 @@ export class Template {
 	public conditions: TemplateCondition[]; // AND条件のリスト
 	public destinationId: string; // 送信先のID (Destinationエンティティと繋がる)
 	public readonly userId: string;
+	public userNotionIntegrationId: string | null; // Added: Link to UserNotionIntegration
 	public createdAt: Date;
 	public updatedAt: Date;
 
@@ -37,6 +38,7 @@ export class Template {
 		conditions: TemplateCondition[],
 		destinationId: string,
 		userId: string,
+		userNotionIntegrationId: string | null = null, // Added, defaults to null
 		createdAt?: Date,
 		updatedAt?: Date,
 	) {
@@ -47,6 +49,7 @@ export class Template {
 		this.conditions = conditions;
 		this.destinationId = destinationId;
 		this.userId = userId;
+		this.userNotionIntegrationId = userNotionIntegrationId; // Added
 		this.createdAt = createdAt || new Date();
 		this.updatedAt = updatedAt || new Date();
 
