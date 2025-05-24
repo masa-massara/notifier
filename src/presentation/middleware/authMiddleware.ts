@@ -10,7 +10,7 @@ import { getAuth } from "firebase-admin/auth";
 // }
 
 export const authMiddleware: MiddlewareHandler = async (c, next) => {
-	console.log("======== authMiddleware: Entered ========"); // ★ 追加：ミドルウェア開始ログ
+	console.log("------ authMiddleware: Entered ------"); // ★ 追加：ミドルウェア開始ログ
 
 	const authHeader = c.req.header("Authorization");
 
@@ -66,7 +66,7 @@ export const authMiddleware: MiddlewareHandler = async (c, next) => {
 		); // メッセージを少し具体的に
 	}
 
-	console.log("======== authMiddleware: Calling next() ========"); // ★ 追加：next()呼び出し前ログ
+	console.log("------ authMiddleware: Calling next() ------"); // ★ 追加：next()呼び出し前ログ
 	await next();
-	console.log("======== authMiddleware: Returned from next() ========"); // ★ 追加：next()呼び出し後ログ
+	console.log("------ authMiddleware: Returned from next() ------"); // ★ 追加：next()呼び出し後ログ
 };
