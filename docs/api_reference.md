@@ -6,7 +6,7 @@
 
 ## 認証について
 
-`/api/v1/templates` および `/api/v1/destinations` で始まるエンドポイントへのリクエストは、Firebase Authentication によって発行されたIDトークンによる認証が必要です。
+`/api/v1/templates`, `/api/v1/destinations`, `/api/v1/me/notion-integrations`, および `/api/v1/notion-databases` で始まるエンドポイントへのリクエストは、Firebase Authentication によって発行されたIDトークンによる認証が必要です。
 
 リクエストを行う際には、以下の形式で `Authorization` ヘッダーにIDトークンを含めてください。
 
@@ -29,13 +29,30 @@
         ```
 * **`403 Forbidden`**:
     * IDトークンは有効だが、要求されたリソースへのアクセス権がない場合（例: 他のユーザーのリソースを操作しようとした場合）。
-    * レスポンスボディ例:
+    * レスポンスボディ例 (汎用):
+        ```json
+        {
+          "error": "Forbidden",
+          "message": "User does not have access to the requested resource."
+        }
+        ```
+        または、リソースが見つからない場合と区別がつかない場合:
         ```json
         {
           "error": "Forbidden or Not Found",
-          "details": "Resource not found or not accessible by user."
+          "message": "Resource not found or not accessible by user."
         }
         ```
+
+### 一般的なエラーレスポンスボディ形式 (新規API向け)
+以下の形式のエラーレスポンスボディが返されることがあります。
+```json
+{
+  "error": "エラー種別 (例: BadRequest, NotFound, InternalServerError)",
+  "message": "具体的なエラーメッセージ",
+  "details": "（オプション）エラーに関する追加詳細情報"
+}
+```
 
 ## 1. Templates (通知テンプレート管理)
 
@@ -194,10 +211,9 @@
 
 ## 2. User Notion Integrations (ユーザーNotion連携管理)
 
-認証されたユーザーが自身のNotionインテグレーションTOKENを登録・管理するためのエンドポイントです。ここで登録されたNotion連携は、通知テンプレート作成時に指定することで、そのテンプレートがユーザーのNotionデータベースにアクセスする際に使用されます。
+認証されたユーザーが自身のNotionインテグレーションTOKENを登録・管理するためのエンドポイントです。ここで登録されたNotion連携は、通知テンプレート作成時に指定することで、そのテンプレートがユーザーのNotionデータベースにアクセスする際に使用されます。また、直接この連携を使用してNotionの情報を取得するAPIも提供されます。
 
 ### 2.1. Notion連携の登録
-
 -   **エンドポイント**: `POST /api/v1/me/notion-integrations`
 -   **説明**: 認証されたユーザーのために新しいNotion連携を登録します。**認証が必要です。**
 -   **リクエストヘッダー**:
@@ -235,7 +251,6 @@
     ```
 
 ### 2.2. Notion連携一覧の取得
-
 -   **エンドポイント**: `GET /api/v1/me/notion-integrations`
 -   **説明**: 認証されたユーザーが登録したNotion連携の一覧を取得します。**認証が必要です。**
 -   **リクエストヘッダー**:
@@ -263,7 +278,6 @@
     ```
 
 ### 2.3. Notion連携の削除
-
 -   **エンドポイント**: `DELETE /api/v1/me/notion-integrations/:integrationId`
 -   **説明**: 指定されたIDのNotion連携を削除します。認証されたユーザーが所有するものに限ります。**認証が必要です。**
 -   **パスパラメータ**:
@@ -291,11 +305,104 @@
      -H "Authorization: Bearer YOUR_ID_TOKEN_HERE"
     ```
 
+### 2.4. ユーザーがアクセス可能なNotionデータベース一覧取得 (新規追加)
+
+-   **エンドポイント**: `GET /api/v1/me/notion-integrations/{integrationId}/databases`
+-   **説明**: 指定された `UserNotionIntegration` (`integrationId`) を使用して、ユーザーがアクセス権を持つNotionデータベースの一覧を取得します。フロントエンドで通知テンプレート作成時に、どのデータベースを対象にするかを選択する際などに利用します。**認証が必要です。**
+-   **メソッド**: `GET`
+-   **認証**: 必須 (Firebase IDトークン)
+-   **パスパラメータ**:
+    *   `integrationId` (string, 必須): 使用する `UserNotionIntegration` のID。
+-   **レスポンス (成功時)**:
+    -   ステータスコード: `200 OK`
+    -   ボディ (JSON): アクセス可能なNotionデータベースの配列
+        ```json
+        [
+          { "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", "name": "データベースのタイトル1" },
+          { "id": "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy", "name": "データベースのタイトル2" }
+        ]
+        ```
+-   **レスポンス (エラー時)**:
+    -   `400 Bad Request`: `integrationId` が不正な形式の場合など。
+        ```json
+        { "error": "BadRequest", "message": "Invalid integrationId format." }
+        ```
+    -   `401 Unauthorized`: (認証ミドルウェアが処理)
+        ```json
+        { "error": "Unauthorized", "message": "Bearer token is missing or invalid." }
+        ```
+    -   `403 Forbidden`: ユーザーが指定された `integrationId` の所有者でない場合。
+        ```json
+        { "error": "Forbidden", "message": "User does not have access to this Notion integration." }
+        ```
+    -   `404 Not Found`: 指定された `integrationId` の連携情報が見つからない場合。
+        ```json
+        { "error": "NotFound", "message": "Notion integration with ID {integrationId} not found." }
+        ```
+    -   `500 Internal Server Error`: Notion APIエラー、トークン復号失敗、その他のサーバー内部エラー。
+        ```json
+        { "error": "InternalServerError", "message": "Failed to retrieve accessible databases from Notion." }
+        ```
+-   **curl コマンド例**:
+    ```bash
+    curl -X GET http://localhost:3000/api/v1/me/notion-integrations/your_integration_id/databases \
+     -H "Authorization: Bearer YOUR_ID_TOKEN_HERE"
+    ```
+
+## 3. Notion Database Information (Notionデータベース情報) (新規セクション)
+
+認証されたユーザーのNotion連携を使用して、特定のNotionデータベースに関する詳細情報を取得するためのエンドポイントです。
+
+### 3.1. 特定Notionデータベースのプロパティ情報取得 (新規追加)
+
+-   **エンドポイント**: `GET /api/v1/notion-databases/{databaseId}/properties`
+-   **説明**: 指定されたNotionデータベース (`databaseId`) のプロパティ（カラム）情報の一覧を取得します。通知条件設定UIなどで、ユーザーがどのプロパティを条件に使うかを選択する際に利用します。**認証が必要です。**
+-   **メソッド**: `GET`
+-   **認証**: 必須 (Firebase IDトークン)
+-   **パスパラメータ**:
+    *   `databaseId` (string, 必須): プロパティ情報を取得したいNotionデータベースのID。
+-   **クエリパラメータ**:
+    *   `integrationId` (string, 必須): この `databaseId` へのアクセスに使用する `UserNotionIntegration` のID。どの連携トークンを使ってデータベース情報を取得するかを指定します。
+-   **レスポンス (成功時)**:
+    -   ステータスコード: `200 OK`
+    -   ボディ (JSON): Notionデータベースのプロパティ情報の配列
+        ```json
+        [
+          { "id": "title", "name": "タスク名", "type": "title" },
+          { "id": "prop_id_2", "name": "期日", "type": "date" },
+          { "id": "prop_id_3", "name": "優先度", "type": "select", "options": [ { "id": "opt_1", "name": "高", "color": "red" } ] },
+          { "id": "prop_id_4", "name": "ステータス", "type": "status", "options": [ { "id": "stat_1", "name": "未着手" }, { "id": "stat_2", "name": "進行中"} ] }
+        ]
+        ```
+-   **レスポンス (エラー時)**:
+    -   `400 Bad Request`: `databaseId` または `integrationId` が不正な場合。
+        ```json
+        { "error": "BadRequest", "message": "databaseId path parameter and integrationId query parameter are required." }
+        ```
+    -   `401 Unauthorized`: (認証ミドルウェアが処理)
+    -   `403 Forbidden`: ユーザーが `integrationId` を所有していない、またはそのトークンで `databaseId` にアクセスできない場合。
+        ```json
+        { "error": "Forbidden", "message": "User does not have access to this Notion integration, or the integration cannot access the specified database." }
+        ```
+    -   `404 Not Found`: `databaseId` のデータベースが見つからない、または `integrationId` の連携情報が見つからない場合。
+        ```json
+        { "error": "NotFound", "message": "Notion database {databaseId} or integration {integrationId} not found." }
+        ```
+    -   `500 Internal Server Error`: Notion APIエラー、トークン復号失敗、その他のサーバー内部エラー。
+        ```json
+        { "error": "InternalServerError", "message": "Failed to retrieve database properties from Notion." }
+        ```
+-   **curl コマンド例**:
+    ```bash
+    curl -X GET "http://localhost:3000/api/v1/notion-databases/your_database_id/properties?integrationId=your_integration_id" \
+     -H "Authorization: Bearer YOUR_ID_TOKEN_HERE"
+    ```
+
 ## 4. Destinations (通知送信先管理)
 
 通知を送信する先の Webhook URL を管理するためのエンドポイントです。
 
-### 2.1. 送信先の登録
+### 4.1. 送信先の登録
 -   **エンドポイント**: `POST /api/v1/destinations`
 -   **説明**: 新しい通知送信先 (Webhook URL) を登録します。**認証が必要です。**
 -   **リクエストヘッダー**:
@@ -329,7 +436,7 @@
      -d '{"name": "マイ Discord チャンネル","webhookUrl": "https://discord.com/api/webhooks/your_webhook_url"}'
     ```
 
-### 2.2. 送信先一覧の取得
+### 4.2. 送信先一覧の取得
 -   **エンドポイント**: `GET /api/v1/destinations`
 -   **説明**: 認証されたユーザーが所有する通知送信先の一覧を取得します。**認証が必要です。**
 -   **リクエストヘッダー**:
@@ -343,7 +450,7 @@
      -H "Authorization: Bearer YOUR_ID_TOKEN_HERE"
     ```
 
-### 2.3. 特定送信先の取得
+### 4.3. 特定送信先の取得
 -   **エンドポイント**: `GET /api/v1/destinations/:id`
 -   **説明**: 指定された ID の通知送信先を取得します。認証されたユーザーが所有するものに限ります。**認証が必要です。**
 -   **パスパラメータ**:
@@ -361,7 +468,7 @@
      -H "Authorization: Bearer YOUR_ID_TOKEN_HERE"
     ```
 
-### 2.4. 送信先の更新
+### 4.4. 送信先の更新
 -   **エンドポイント**: `PUT /api/v1/destinations/:id`
 -   **説明**: 指定された ID の通知送信先を更新します。認証されたユーザーが所有するものに限ります。**認証が必要です。**
 -   **パスパラメータ**:
@@ -389,7 +496,7 @@
      -d '{"name": "更新後の送信先名"}'
     ```
 
-### 2.5. 送信先の削除
+### 4.5. 送信先の削除
 -   **エンドポイント**: `DELETE /api/v1/destinations/:id`
 -   **説明**: 指定された ID の通知送信先を削除します。認証されたユーザーが所有するものに限ります。**認証が必要です。**
 -   **パスパラメータ**:
@@ -441,3 +548,5 @@ Notion からの Webhook リクエストを受信し、通知処理を開始す�
         ```
 -   **レスポンス (エラー時)**:
     -   ステータスコード: `400 Bad Request`, `500 Internal Server Error`
+
+```
