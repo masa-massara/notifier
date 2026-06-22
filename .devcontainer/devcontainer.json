@@ -19,7 +19,7 @@
 			"installZsh": false,
 			"upgradePackages": true
 		},
-		"ghcr.io/devcontainers/features/node:1": {
+		"ghcr.io/devcontainers/features/node:2": {
 			// Node.js (npmも一緒に入る)
 			"version": "lts" // LTS版 (安定版) を指定
 		},
